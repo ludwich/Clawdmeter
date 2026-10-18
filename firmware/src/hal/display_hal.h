@@ -29,3 +29,10 @@ void display_hal_tick(void);
 
 // LVGL flush regions must be even-aligned on the CO5300; harmless on others.
 void display_hal_round_area(int32_t* x1, int32_t* y1, int32_t* x2, int32_t* y2);
+
+// Optional: turn the panel a quarter turn into landscape (on) or back to its
+// native orientation (off), in the controller, so the extra pages (pages.h)
+// can lay out sideways. Returns false where the board can't; the weak
+// default in display_hal_default.cpp does, and those boards keep the meters
+// as their only page.
+bool display_hal_set_landscape(bool on);

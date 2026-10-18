@@ -22,6 +22,7 @@ sync with the compile-time `BOARD_HAS_*` flags in `board.h`.
 | `display_hal_draw_bitmap`   | Push a w×h RGB565 strip at (x, y). If the panel can't rotate natively, apply CPU rotation here before pushing — `imu_hal_rotation_quadrant()` returns the current orientation. **Must complete inside LVGL's render budget** (a few ms at typical strip sizes). |
 | `display_hal_tick`          | Per-loop housekeeping — used by rotation-aware boards to blank the panel + ramp brightness during a rotation transition. No-op on boards without rotation. |
 | `display_hal_round_area`    | LVGL invalidate-area hook. Most QSPI AMOLED drivers expect even-aligned flush regions; apply `& ~1` / `| 1` to coordinates. |
+| `display_hal_set_landscape` | Optional. Turn the panel a quarter turn into landscape (`true`) or back to its native orientation (`false`) in the controller, with the matching offsets, and return `true`. A weak default in `firmware/src/display_hal_default.cpp` returns `false`; a board that implements it gets the extra pages (`pages.h`, see "Pages" in `docs/clawd-director.md`). Only for controllers that swap rows and columns themselves (ST7789 MADCTL); not the CO5300. |
 
 ## `touch_hal.h`
 
@@ -103,6 +104,8 @@ function in your board folder only when it has something to report.
 | `disconnect`              | drops every BLE connection (no reply); the board re-advertises. |
 | `perf`                    | prints the redraw cost (refreshes, time, pixels sent, longest gap) of the last face rise, settle, drop and performance. |
 | `info`                    | one JSON line: `{"env":"waveshare_amoled_18","ver":"v1.9.0","rev":"co5300_cst816","link":"ble"}`. `env` comes from `-DCLAWD_ENV` (set per env in `platformio.ini` from `${this.__env__}`), `ver` from `-DCLAWD_VERSION` (defaults to `dev`; CI sets `PLATFORMIO_BUILD_FLAGS='-DCLAWD_VERSION=\"vX.Y.Z\"'`), `rev` from `board_hal_rev()`. |
+| `page <n>`                | shows page `n` (0 meters, 1 Clawd, 2 usage) on boards with pages; ignored elsewhere. Prints `page: n`. |
+| `mood <bits>`             | QA for the Clawd page: forces his moods, bit 1 angry, bit 2 yelling (`mood 3` both); `mood 0` returns to the real cues. No reply. |
 | `clawd <beat>`            | starts a Clawd beat now, for `screenshot` QA without waiting for the situation: `show`, `screensaver`, `attention`, `joy`, `lurk` (a lurk trip, PSRAM boards), `peek [x]` (curious face), `home` (return home). Replies `{"clawd":"show","ok":true}`. See `docs/clawd-director.md`. |
 
 ## Layout and visual checks

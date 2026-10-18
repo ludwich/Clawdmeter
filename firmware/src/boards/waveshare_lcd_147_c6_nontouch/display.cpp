@@ -40,6 +40,14 @@ void display_hal_draw_bitmap(int32_t x, int32_t y, int32_t w, int32_t h,
     if (gfx) gfx->draw16bitRGBBitmap(x, y, (uint16_t*)pixels, w, h);
 }
 
+// Landscape for the extra pages: a quarter turn in the controller (MADCTL),
+// USB-C on the right. Arduino_GFX applies the matching column/row offsets.
+bool display_hal_set_landscape(bool on) {
+    if (!gfx) return false;
+    gfx->setRotation(on ? 1 : 0);
+    return true;
+}
+
 void display_hal_tick(void) {
     // No rotation on this board.
 }

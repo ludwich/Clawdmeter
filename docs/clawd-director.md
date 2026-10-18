@@ -21,6 +21,8 @@ what you want (see "A tap on the meters" below).
 | `firmware/src/field.{h,cpp}` | A flat-colour shape on an overlay layer (a rectangle plus two small extra rectangles) that redraws only the strips that change colour (see "Redraw cost and frame rate"). The face is a field. |
 | `firmware/src/perf.{h,cpp}` | The `perf` serial command: refresh count, timing and pixels sent for the last face rise, its settle, face drop and performance. |
 | `firmware/src/clawd_anim.{h,cpp}` | Read-only view of the official animations. It is the only translation unit that includes `splash_animations.h` (about 400 KB of static data). |
+| `firmware/src/pages.{h,cpp}` | Extra landscape pages on boards whose panel can turn (`display_hal_set_landscape`): the Clawd page and a usage page, cycled by the PWR button. Puts the director offstage while one is up. See "Pages". |
+| `firmware/src/stage.{h,cpp}` | The Clawd page: Clawd alone, large, playing official animations; at his laptop while Claude works; moods (yelling, angry) drawn around the sprite as LVGL shapes. |
 | `firmware/src/ui.{h,cpp}` | Draws the meters only: cards, clock, status line, battery, the seat. Stale data dims the meters (see below); it never adds a second creature. |
 
 `main.cpp` feeds the director per payload (`director_on_payload` after
@@ -357,8 +359,39 @@ a board capability, with no NVS override, desktop setting, or serial toggle.
 - BOOT (Space) and SECONDARY (Shift+Tab): unchanged. They also count as
   engagement and wake the screensaver.
 - PWR short press: cycles brightness and counts as engagement (waking the
-  screensaver, face or calm dip). Hold to pair is unchanged.
+  screensaver, face or calm dip). Hold to pair is unchanged. On boards with
+  pages (below) one press is the next page and two presses within 350 ms
+  cycle brightness; an alert's dismiss press still comes first.
 - Shows are earned rather than opened by a button or a tap.
+
+## Pages
+
+Opt-in per board: only boards that implement `display_hal_set_landscape()`
+(`docs/porting/hal-contract.md`) get them; everywhere else the meters are the
+only page and nothing below applies. The PWR button cycles:
+
+| Page | Orientation | What's on it |
+|---|---|---|
+| meters | native | The dashboard with the corner Clawd, as everywhere. |
+| Clawd | landscape | Clawd alone, large (`stage.cpp`): walks or scuttles about, waves, dances, jumps, plays with his ball or skateboard, all official animations. While Claude works (`clawd_working`, `director_claude_working()`) he sits at his laptop until the work stops. |
+| usage | landscape | The two usage bars, large, with their reset lines; bar colours and dimming as on the meters. |
+
+- **One Clawd on screen.** Each extra page is its own LVGL screen, so the
+  meters and the corner Clawd aren't drawn while it's up. The director is
+  offstage (`director_set_offstage`): beats hold where they are, no show,
+  screensaver or peek starts behind the page; payload reactions still reach the
+  hidden corner Clawd. Back on the meters counts as engagement.
+- **Moods** are drawn around the sprite, never into it: *yelling* (an alert is
+  up: a shaking speech bubble with the alert text and sound waves) and *angry*
+  (usage in the Heavy group or the session at 80 %+: an anger mark and steam).
+  An alert on the usage page switches to the Clawd page; on the meters the
+  usual attention beat plays. A press dismisses it wherever it shows.
+- From the meters with the face up (any room but the meters), a press is
+  "show me the meters" (`clawd home`), not the next page.
+- C6: the Clawd page's sprite buffer (~60 KB) is allocated when the page opens
+  and freed when it closes.
+- QA: `page <n>` and `mood <bits>` on the serial console
+  (`docs/porting/hal-contract.md`).
 
 ## Tunables
 

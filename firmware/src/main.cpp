@@ -21,6 +21,7 @@
 #include "clawd_prefs.h"
 #include "perf.h"
 #include "pair_hold.h"
+#include "pages.h"
 
 #include "hal/board_caps.h"
 #include "hal/display_hal.h"
@@ -132,6 +133,9 @@ static void clear_pairing(const char* why) {
     ui_set_pair_hint(PAIR_HINT_CLEARED);
 }
 
+// Two PWR presses this close together cycle brightness instead of the page.
+#define PWR_DOUBLE_MS 350
+
 // ---- Serial command buffer ----
 #define CMD_BUF_SIZE 64
 static char cmd_buf[CMD_BUF_SIZE];
@@ -202,6 +206,8 @@ static void check_serial_cmd() {
                 }
             }
             else if (strcmp(cmd_buf, "info") == 0)  send_info();
+            else if (strncmp(cmd_buf, "page ", 5) == 0) pages_show((Page)atoi(cmd_buf + 5));
+            else if (strncmp(cmd_buf, "mood ", 5) == 0) pages_debug_mood(atoi(cmd_buf + 5));
             else if (strcmp(cmd_buf, "perf") == 0)  perf_print();
             else if (strcmp(cmd_buf, "ble") == 0) ble_print_status();
             else if (strcmp(cmd_buf, "disconnect") == 0) ble_disconnect_all();
@@ -288,6 +294,7 @@ void setup() {
     ui_update_battery(power_hal_battery_pct(), power_hal_is_charging(), power_hal_is_vbus_in());
     director_init();    // rooms + beats; boots on the meters (home)
     clawd_prefs_init();  // the saved device settings, before the app says otherwise
+    pages_init();        // extra landscape pages, where the panel can rotate
 
     Serial.printf("Dashboard ready (%s, %dx%d) %lu ms after boot, waiting for data on BLE...\n",
         board_caps().name, W, H, (unsigned long)millis());
@@ -378,6 +385,7 @@ void loop() {
     performer_tick();
     mascot_tick();
     director_tick();
+    pages_tick();
     if (director_take_dismissed()) ble_send_dismiss();
     // Rotation transition (blank + ramp) would fight the idle fade — skip
     // ticks while the panel is dark. A rotation that happens during sleep
@@ -427,13 +435,24 @@ void loop() {
             }
         }
 
+        // With extra pages a single press waits PWR_DOUBLE_MS for a second:
+        // one press is the next page, two cycle brightness.
+        static bool     pwr_tap_pending = false;
+        static uint32_t pwr_tap_ms = 0;
         if (power_hal_pwr_pressed()) {
             if (!idle_consume_wake_press()) {
                 // Counts as you being here. On a touchless board whose only
                 // button this is, it dismisses an active alert first; else it
-                // cycles brightness.
-                if (!director_button(board_caps().button_count == 0)) brightness_cycle();
+                // cycles brightness (or pages, above).
+                if (director_button(board_caps().button_count == 0)) pwr_tap_pending = false;
+                else if (!pages_enabled())                          brightness_cycle();
+                else if (pwr_tap_pending) { pwr_tap_pending = false; brightness_cycle(); }
+                else { pwr_tap_pending = true; pwr_tap_ms = millis(); }
             }
+        }
+        if (pwr_tap_pending && millis() - pwr_tap_ms >= PWR_DOUBLE_MS) {
+            pwr_tap_pending = false;
+            pages_next();
         }
 
         pair_tick();
@@ -489,6 +508,7 @@ void loop() {
             }
             if (usage.pace_marker >= 0) pace_marker_set(usage.pace_marker != 0);
             ui_update(&usage);
+            pages_update(&usage);
             // A prompt (or you're back after a gap): you're at the computer,
             // so a dimmed or dark panel wakes before Clawd notices you. A
             // Stop or tool activity doesn't: Claude working alone isn't you.
@@ -499,6 +519,7 @@ void loop() {
             director_on_payload(&usage, &sig);
             if (usage.alert_msg[0]) {
                 Serial.println("attention — mascot");
+                pages_on_alert();          // Clawd yells for you wherever he is
                 idle_note_activity();
                 director_alert(usage.alert_msg);
             }
