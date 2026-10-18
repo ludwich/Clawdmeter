@@ -211,7 +211,9 @@ for it to clear the top edge by 2 px without touching the first panel
 compact layout starts its panels at y 96 to make room. A 240 px panel has no
 such room (the seat would land in the first panel), so there `mascot_act`
 swaps any act taller than the headroom for dancing (17 cells) rather than clip
-him.
+him. On a wide, short panel (the console layout, 320×172) the seat is on the
+rail floor at the bottom, so the whole height is headroom: the jump's apex is
+at y 26 and no act is swapped.
 
 **Engagement** resets the screensaver clock. Engagement is any fired hook
 event, any activity level above 0 (tool calls are hook events too), a tap, a
@@ -343,9 +345,20 @@ a board capability, with no NVS override, desktop setting, or serial toggle.
 
 ## Boards without PSRAM (C6)
 
-- Corner Clawd: animated. Its buffer, sized for the largest corner act
-  (jumping happy, 28×30 cells × 3 px, about 23 KB; sized by area, so the
-  wider but shorter laptop fits), falls back to internal RAM.
+- Corner Clawd: animated. Its buffer, sized for the largest corner act by
+  area (the laptop, 34×23 cells; at 3 px about 23 KB), falls back to
+  internal RAM.
+- Wide, short panels (the LCD-1.47 in landscape, 320×172) get the console
+  layout (`layout.cpp`, `side_by_side`): the corner Clawd stands at 4 px
+  cells (96×72 idle) on the rail floor along the bottom, seat at x 12, feet
+  on y 146, with the whole height as headroom (jumping happy's apex at y 26,
+  no tall-act swap). The laptop act (136×92) stays inside x 12..148, left of
+  the instrument column; the status line sits to his right in the rail. His
+  buffer is 37.5 KB of internal RAM (the laptop at 4 px); if that allocation
+  fails `ui.cpp` retries at 3 px (21 KB, seat moved in to x 24), and failing
+  that stands the still Clawd there. On the LCD-1.47 the 4 px buffer
+  allocates with ~200 KB of internal heap left (~140 KB with the Clawd
+  page's stage open).
 - Face: plain LVGL objects, the same as on S3.
 - No performer (its buffer is about 690 KB): a show is corner acts (pointing,
   dancing or jumping happy twice, a wave) and a calm dip is the corner Clawd
@@ -372,7 +385,7 @@ only page and nothing below applies. The PWR button cycles:
 
 | Page | Orientation | What's on it |
 |---|---|---|
-| meters | native | The dashboard with the corner Clawd, as everywhere. |
+| meters | native | The dashboard with the corner Clawd, as everywhere. On the LCD-1.47 the native orientation *is* landscape (the panel is turned at init, USB-C on the left), so every page is landscape and the meters take the console layout. |
 | Clawd | landscape | Clawd alone, large (`stage.cpp`), in front of scenery that says where he is: an office while Claude works (at his laptop until the work stops), outside while he plays (official animations only). See below. |
 | usage | landscape | The two usage bars, large, with their reset lines; bar colours and dimming as on the meters. |
 

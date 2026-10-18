@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <initializer_list>
+#include <string.h>
 #include "../../src/layout.cpp"
 
 struct Panel { const char* name; int16_t w, h; bool round; };
@@ -22,6 +23,8 @@ static const Panel PANELS[] = {
     { "T4-S3 landscape",      600, 450, false },
     { "T-Display S3",         170, 320, false },
     { "LCD-1.47 (C6)",        172, 320, false },
+    { "LCD-1.47 (C6) landscape", 320, 172, false },
+    { "T-Display S3 landscape", 320, 170, false },
     { "M5StickS3",            135, 240, false },
     { "AMOLED-1.32 / 1.43",   466, 466, true  },
     { "ePaper 1.54",          200, 200, false },
@@ -108,9 +111,103 @@ static void check_title(const char* text) {
     check_apart("title vs battery", t, battery());
 }
 
+// The corner Clawd's acts, in art cells (splash_animations.h), for the
+// console's seat: the box every act draws in, standing on the feet line.
+struct Act { const char* name; int w, h; };
+static const Act CORNER_ACTS[] = {
+    { "walking", 24, 18 }, { "waving", 24, 21 }, { "pointing", 28, 21 },
+    { "dancing", 24, 17 }, { "jumping happy", 24, LAYOUT_CORNER_ACT_H }, { "laptop", LAYOUT_CORNER_ACT_W, 23 },
+};
+
+static Box rail() { return { L.rail.x, L.rail.y, L.rail.w, L.rail.h }; }
+static bool inside(Box a, Box b) {   // a inside b
+    return a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h;
+}
+
+// The console (side_by_side): Clawd on the rail, the rows in a column to
+// his right, the clock, battery and status line in the rail.
+static void check_console(const Panel& p) {
+    const Box column = { L.status_x, 0, L.status_w, L.rail.y };
+    if (L.rail.y + L.rail.h != p.h || L.rail.x != 0 || L.rail.w != p.w) fail("rail", rail());
+    if (!(L.clawd_cell >= 2 && L.clawd_cell <= 4)) fail("Clawd cell", { 0, 0, L.clawd_cell, 0 });
+
+    // Every act at the seat: on the glass, above the rail, left of the column.
+    for (const Act& a : CORNER_ACTS) {
+        const Box b = { L.seat_x, L.seat_feet_y - a.h * L.clawd_cell, a.w * L.clawd_cell, a.h * L.clawd_cell };
+        if (strcmp(a.name, "jumping happy") != 0) check_on_glass(a.name, b);   // the jump may swap for a shorter act
+        if (b.y + b.h > L.rail.y) fail(a.name, b);
+        check_apart(a.name, b, column);
+    }
+    if (L.seat_feet_y != L.rail.y) fail("seat not on the rail", { L.seat_x, L.seat_feet_y, 0, 0 });
+
+    // The rows: in the column, apart, above the rail; their strings fit.
+    for (int i = 0; i < 2; i++) {
+        check_on_glass("row", card(i));
+        if (!inside(card(i), column)) fail("row outside the column", card(i));
+        if (card(i).y + card(i).h > L.rail.y) fail("row vs rail", card(i));
+    }
+    check_apart("rows", card(0), card(1));
+    if (card(0).x + card(0).w > p.w - 10) fail("row past the right margin", card(0));
+    const int col_w = L.card[0].w;
+    for (int i : { 0, 1, 3 })
+        if (text_w(L.pill_font, L.pills[i]) + 8 + text_w(L.pct_font, "100%") > col_w)
+            fail("label vs percentage", card(i == 0 ? 0 : 1));
+    if (text_w(L.pill_font, L.pills[2]) + 8 + text_w(L.ent_pct_font, "100") + 4 + text_w(L.reset_font, "%") > col_w)
+        fail("spending vs label", card(0));
+    for (const char* s : RESET_TEXT_WIDEST)
+        if (text_w(L.reset_font, s) > col_w) fail(s, card(0));
+    if (text_w(L.period_font, L.period_short ? PERIOD_TEXT_SHORT_WIDEST : PERIOD_TEXT_WIDEST) > col_w)
+        fail("period line", card(1));
+    if (ink_h(L.pct_font) > L.bar_y) fail("percentage vs bar", card(0));
+    if (L.bar_y + L.bar_h > L.reset_y) fail("bar vs reset line", card(0));
+    if (L.reset_y + ink_h(L.reset_font) > L.card[0].h) fail("reset line vs row bottom", card(0));
+
+    // The rail: the clock's widest string, then the battery, left of the
+    // column; the status line under the column.
+    for (title_fmt = 0; title_fmt < 2; title_fmt++) {
+        const lv_font_t* f = L.title_font[title_fmt];
+        if (!f) fail("console without a clock", rail());
+        const int w = widest_clock(f, title_fmt == 1);
+        const Box t = { L.title_x, L.title_y[title_fmt], w, line_h(f) };
+        if (!inside(t, rail())) fail("clock outside the rail", t);
+        check_apart("clock vs battery", t, battery());
+        check_apart("clock vs column", t, column);
+    }
+    if (!inside(battery(), rail())) fail("battery outside the rail", battery());
+    if (battery().x + battery().w > L.status_x) fail("battery vs status line", battery());
+    for (const char* s : STATUS_TEXT_REQUIRED) {
+        const int w = text_w(L.status_font, s), lh = line_h(L.status_font);
+        const Box b = { L.status_x, p.h + L.status_y - lh, w, lh };
+        if (w > L.status_w) fail(s, b);
+        if (!inside(b, rail())) fail("status line outside the rail", b);
+    }
+
+    // The pairing hint: centred in the column, above the rail.
+    static const char* const* const SETS[] = { PAIR_TEXT_PWR, PAIR_TEXT_TOUCH, PAIR_TEXT_CLEARED };
+    for (const char* const* set : SETS) {
+        Box prev = { 0, 0, 0, 0 };
+        for (int i = 0; i < 4; i++) {
+            const char* s = i < 3 ? set[i] : PAIR_TEXT_HOLDING;
+            const lv_font_t* f = L.pair_font[i];
+            int w = text_w(f, s);
+            int lines = 1;
+            if (w > L.pair_w) {
+                if (!L.pair_wrap) fail(s, { L.status_x, L.pair_y + L.pair_line_y[i], w, 0 });
+                lines = wrapped_lines(f, s, L.pair_w);
+                w = L.pair_w;
+            }
+            const Box b = { L.status_x + (L.pair_w - w) / 2, L.pair_y + L.pair_line_y[i], w, lines * line_h(f) };
+            if (!inside(b, column)) fail(s, b);
+            if (i) check_apart("pairing lines", prev, b);
+            prev = b;
+        }
+    }
+}
+
 static void check_panel(const Panel& p) {
     P = &p;
     L = layout_compute({ p.w, p.h, p.round });
+    if (L.side_by_side) { check_console(p); return; }
 
     // Header.
     check_on_glass("corner Clawd", logo_art());
@@ -236,6 +333,47 @@ static void test_large_410x502(void) {
     TEST_ASSERT_EQUAL_INT16(-15, L.status_y);
 }
 
+// The LCD-1.47 in landscape: the console.
+static void test_console_320x172(void) {
+    L = layout_compute({ 320, 172, false });
+    TEST_ASSERT_TRUE(L.side_by_side);
+    TEST_ASSERT_EQUAL_INT8(4, L.clawd_cell);
+    TEST_ASSERT_EQUAL_INT16(12, L.seat_x);     TEST_ASSERT_EQUAL_INT16(146, L.seat_feet_y);
+    TEST_ASSERT_EQUAL_INT16(0, L.rail.x);      TEST_ASSERT_EQUAL_INT16(146, L.rail.y);
+    TEST_ASSERT_EQUAL_INT16(320, L.rail.w);    TEST_ASSERT_EQUAL_INT16(26, L.rail.h);
+    TEST_ASSERT_EQUAL_INT16(154, L.card[0].x); TEST_ASSERT_EQUAL_INT16(6, L.card[0].y);
+    TEST_ASSERT_EQUAL_INT16(156, L.card[0].w); TEST_ASSERT_EQUAL_INT16(62, L.card[0].h);
+    TEST_ASSERT_EQUAL_INT16(154, L.card[1].x); TEST_ASSERT_EQUAL_INT16(74, L.card[1].y);
+    TEST_ASSERT_EQUAL_INT16(0, L.pad_x);       TEST_ASSERT_EQUAL_INT16(0, L.pad_y);
+    TEST_ASSERT_EQUAL_INT16(32, L.bar_y);      TEST_ASSERT_EQUAL_INT16(12, L.bar_h);
+    TEST_ASSERT_EQUAL_INT16(47, L.reset_y);
+    TEST_ASSERT_EQUAL_PTR(&font_styrene_28, L.pct_font);
+    TEST_ASSERT_EQUAL_PTR(&font_tiempos_34, L.ent_pct_font);
+    TEST_ASSERT_EQUAL_PTR(&font_styrene_14, L.pill_font);
+    TEST_ASSERT_EQUAL_PTR(&font_styrene_12, L.reset_font);
+    TEST_ASSERT_EQUAL_PTR(PILL_TEXT, L.pills);
+    TEST_ASSERT_TRUE(L.period_short);          // "Under pace - Resets May 30" is wider than the column
+    TEST_ASSERT_TRUE(L.small_icons);
+    TEST_ASSERT_EQUAL_PTR(&font_styrene_20, L.title_font[0]);
+    TEST_ASSERT_EQUAL_PTR(&font_styrene_20, L.title_font[1]);
+    TEST_ASSERT_EQUAL_INT16(12, L.title_x);    TEST_ASSERT_EQUAL_INT16(149, L.title_y[0]);
+    TEST_ASSERT_EQUAL_INT16(112, L.batt_x);    TEST_ASSERT_EQUAL_INT16(147, L.batt_y);
+    TEST_ASSERT_EQUAL_PTR(&font_mono_18, L.status_font);
+    TEST_ASSERT_EQUAL_INT16(148, L.status_x);  TEST_ASSERT_EQUAL_INT16(168, L.status_w);
+    TEST_ASSERT_EQUAL_INT16(-3, L.status_y);
+    TEST_ASSERT_EQUAL_PTR(&font_styrene_20, L.pair_font[0]);
+    TEST_ASSERT_EQUAL_PTR(&font_styrene_12, L.pair_font[1]);
+    TEST_ASSERT_EQUAL_INT16(0, L.pair_y);      TEST_ASSERT_EQUAL_INT16(168, L.pair_w);
+    TEST_ASSERT_FALSE(L.pair_wrap);
+    TEST_ASSERT_EQUAL_INT16(24, L.pair_line_y[0]);
+    TEST_ASSERT_EQUAL_INT16(104, L.pair_line_y[3]);
+    // The boards whose landscape panels still stack keep their layout.
+    L = layout_compute({ 320, 240, false });
+    TEST_ASSERT_FALSE(L.side_by_side);
+    L = layout_compute({ 284, 240, false });
+    TEST_ASSERT_FALSE(L.side_by_side);
+}
+
 static void test_small_240x240(void) {
     L = layout_compute({ 240, 240, false });
     TEST_ASSERT_EQUAL_INT16(8, L.card[0].x);    TEST_ASSERT_EQUAL_INT16(224, L.card[0].w);
@@ -265,9 +403,10 @@ static void print_layouts(void) {
     for (const Panel& p : PANELS) {
         L = layout_compute({ p.w, p.h, p.round });
         char msg[200];
-        snprintf(msg, sizeof(msg), "%-22s %3dx%-3d cards x%d y%d/%d %dx%d  status y%d w%d  title %s  pills %s",
+        snprintf(msg, sizeof(msg), "%-22s %3dx%-3d cards x%d y%d/%d %dx%d  status y%d w%d  title %s  pills %s%s",
                  p.name, p.w, p.h, L.card[0].x, L.card[0].y, L.card[1].y, L.card[0].w, L.card[0].h,
-                 L.status_y, L.status_w, L.title_font[0] ? "yes" : "hidden", L.pills[0]);
+                 L.status_y, L.status_w, L.title_font[0] ? "yes" : "hidden", L.pills[0],
+                 L.side_by_side ? "  console" : "");
         TEST_MESSAGE(msg);
     }
 }
@@ -279,6 +418,7 @@ int main(int, char**) {
     RUN_TEST(test_compact_368x448);
     RUN_TEST(test_large_410x502);
     RUN_TEST(test_small_240x240);
+    RUN_TEST(test_console_320x172);
     RUN_TEST(test_text_width);
     RUN_TEST(print_layouts);
     return UNITY_END();

@@ -9,7 +9,8 @@ Clawdmeter shows your Claude Code usage limits on an ESP32 development board on 
 Additions on top of upstream, built for a Waveshare ESP32-C6-LCD-1.47. Nothing here is in an upstream PR yet.
 
 **New board: Waveshare ESP32-C6-LCD-1.47 (non-touch)**, env `waveshare_lcd_147_c6_nontouch`.
-- ST7789 172×320 over SPI, ESP32-C6 with no PSRAM; BOOT is the only button.
+- ST7789 172×320 over SPI, run in landscape (320×172, USB-C on the left for the desk stand), ESP32-C6 with no PSRAM; BOOT is the only button.
+- The meters get a **console layout** for wide, short panels: Clawd big on a rail along the bottom (with the clock and status line), the session and weekly rows in a column to his right. A shape rule in `layout.cpp`, covered by `test_layout`.
 - [Buy link](https://www.waveshare.com/esp32-c6-lcd-1.47.htm?&aff_id=149786).
 - Added to the app catalog with its own board art.
 - Tested on hardware (ESP32-C6FH8 rev v0.2).
@@ -22,7 +23,7 @@ Additions on top of upstream, built for a Waveshare ESP32-C6-LCD-1.47. Nothing h
 - Desktop app v2.2.x marks every hook-event write `rp:1`, and the firmware dropped events on `rp`, so prompts and stops never fired.
 - The firmware now fires on any new `es`; `rp` only keeps replayed usage numbers out of the rate math.
 
-**Landscape pages** on boards that can rotate the panel. Opt-in per board via `display_hal_set_landscape()`; today only the LCD-1.47.
+**Landscape pages** on boards that can rotate the panel (or run landscape natively). Opt-in per board via `display_hal_set_landscape()`; today only the LCD-1.47.
 - **BOOT:** one press goes to the next page; a double press cycles brightness.
 - **Pages:** meters → Clawd page → large usage bars.
 
@@ -110,7 +111,7 @@ Stable.
 | <img src="desktop/crates/clawdmeter-app/assets/boards/freenove_s3_display_nontouch.svg" height="90" alt=""> | [Freenove ESP32-S3 Display 2.8 inch (non-touch, FNK0104A)](https://store.freenove.com/products/fnk0104) | 240×320 IPS, no touch. Minimal UI: meters and a still Clawd; BOOT: brightness, hold to pair. |
 | <img src="desktop/crates/clawdmeter-app/assets/boards/sensecap_indicator_d1l.svg" height="90" alt=""> | [Seeed Studio SenseCAP Indicator D1L](https://www.seeedstudio.com/SenseCAP-Indicator-D1L-p-5646.html) | 480×480 RGB touch screen. Side button: brightness / hold to pair; no HID buttons or sound. |
 | <img src="desktop/crates/clawdmeter-app/assets/boards/spotpear_s3_154.svg" height="90" alt=""> | [SpotPear ESP32-S3-LCD-1.54 MUMA (touch)](https://spotpear.com/shop/ESP32-S3-AI-1.54-inch-LCD-Display-TouchScreen-N16R8-muma-DeepSeek.html) | 240×240 ST7789 SPI LCD, CST816 touch, no PMU. BOOT is the only button. |
-| <img src="desktop/crates/clawdmeter-app/assets/boards/waveshare_lcd_147_c6_nontouch.svg" height="90" alt=""> | [Waveshare ESP32-C6-LCD-1.47 (non-touch)](https://www.waveshare.com/esp32-c6-lcd-1.47.htm?&aff_id=149786) | 172×320 ST7789 SPI TFT on the ESP32-C6 (no PSRAM), no touch. BOOT is the only button: brightness, hold to pair. |
+| <img src="desktop/crates/clawdmeter-app/assets/boards/waveshare_lcd_147_c6_nontouch.svg" height="90" alt=""> | [Waveshare ESP32-C6-LCD-1.47 (non-touch)](https://www.waveshare.com/esp32-c6-lcd-1.47.htm?&aff_id=149786) | 172×320 ST7789 SPI TFT on the ESP32-C6 (no PSRAM), run in landscape (320×172), no touch. BOOT is the only button: next page, double press brightness, hold to pair. |
 
 ## Install
 

@@ -7,6 +7,10 @@
 // panel needs colour inversion (Waveshare's init ends with INVON) and has no
 // brightness command, so brightness is a LEDC PWM duty on the backlight GPIO
 // and the idle fade works unchanged.
+//
+// The panel is 172x320 portrait but runs in landscape (LCD_ROTATION, a
+// quarter turn in the controller's MADCTL, USB-C on the left): BoardCaps
+// reports 320x172 and every page lays out sideways.
 
 static Arduino_DataBus* bus = nullptr;
 static Arduino_ST7789*  gfx = nullptr;
@@ -15,9 +19,10 @@ void display_hal_init(void) {
     bus = new Arduino_ESP32SPI(LCD_DC, LCD_CS, LCD_SCLK, LCD_MOSI,
                                GFX_NOT_DEFINED /* panel is write-only */);
     // 172-column window centred in the 240-column GRAM: offset 34 on both
-    // sides, so rotations 0 and 2 land on the glass alike.
-    gfx = new Arduino_ST7789(bus, LCD_RST, 0 /* rotation */, true /* ips */,
-                             LCD_WIDTH, LCD_HEIGHT,
+    // sides, so every rotation lands on the glass alike. Arduino_GFX applies
+    // the matching column/row offsets for the rotation.
+    gfx = new Arduino_ST7789(bus, LCD_RST, LCD_ROTATION, true /* ips */,
+                             LCD_PANEL_WIDTH, LCD_PANEL_HEIGHT,
                              LCD_COL_OFFSET, LCD_ROW_OFFSET,
                              LCD_COL_OFFSET, LCD_ROW_OFFSET);
 }
@@ -26,6 +31,7 @@ void display_hal_begin(void) {
     // The SPI pins go through the GPIO matrix (not the C6's IOMUX FSPI pins),
     // which caps the reliable write clock at 40 MHz.
     gfx->begin(40000000);
+    gfx->setRotation(LCD_ROTATION);   // begin() applies it too; be explicit
     gfx->fillScreen(0x0000);
     ledcAttach(LCD_BL, 5000 /* Hz */, 8 /* bits */);
     ledcWrite(LCD_BL, 200);
@@ -40,12 +46,12 @@ void display_hal_draw_bitmap(int32_t x, int32_t y, int32_t w, int32_t h,
     if (gfx) gfx->draw16bitRGBBitmap(x, y, (uint16_t*)pixels, w, h);
 }
 
-// Landscape for the extra pages: a quarter turn in the controller (MADCTL),
-// USB-C on the right. Arduino_GFX applies the matching column/row offsets.
+// The panel already runs in landscape, so the extra pages (pages.h) need
+// no turn: both directions keep the quarter turn set at init. True enables
+// the pages.
 bool display_hal_set_landscape(bool on) {
-    if (!gfx) return false;
-    gfx->setRotation(on ? 1 : 0);
-    return true;
+    (void)on;
+    return gfx != nullptr;
 }
 
 void display_hal_tick(void) {

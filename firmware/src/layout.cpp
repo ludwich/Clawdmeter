@@ -447,6 +447,117 @@ static bool place_round(Layout& L, const Design& d, const Chrome** chrome) {
     return place_round_with(L, d, CHROME_SMALL);
 }
 
+// ─── Wide and short panels: the console ──────────────────────────────────────
+// Where no top-down design fits a panel wider than it is tall (320x172),
+// the rows go beside Clawd instead of under him. He stands on a rail along
+// the bottom, near page-size; the two rows sit in a column to his right in
+// the usage page's idiom (label left, percentage right, bar, reset line);
+// the rail holds the clock, the battery and the status line.
+
+#define RAIL_H         26   // the rail: full width, along the bottom
+#define COL_GAP         6   // the column starts this far right of Clawd's widest act
+#define ROW_TOP         6   // first row's top edge
+#define ROW_PITCH      68   // second row's top edge, below the first
+#define ROW_H          62   // label 14, percentage 30, bar at 32, reset line at 47
+#define RIGHT_MARGIN   10   // the rows end this far from the right edge
+#define SEAT_X         12   // Clawd's seat, from the left edge
+#define STATUS_INSET    4   // status line's distance from the right edge
+
+// The console's rows fit a column col_w wide: a label beside "100%", the
+// spend-capped number and its "%" beside "Spending", the widest reset line.
+static bool console_fits(const Layout& L, int16_t col_w) {
+    const char* const usage_pills[] = { L.pills[0], L.pills[1], L.pills[3] };
+    const int n = sizeof(RESET_TEXT_WIDEST) / sizeof(RESET_TEXT_WIDEST[0]);
+    return widest(L.pill_font, usage_pills, 3) + 8 + layout_text_width(L.pct_font, "100%") <= col_w
+        && layout_text_width(L.pill_font, L.pills[2]) + 8 + layout_text_width(L.ent_pct_font, "100") + 4
+           + layout_text_width(&font_styrene_12, "%") <= col_w
+        && widest(L.reset_font, RESET_TEXT_WIDEST, n) <= col_w;
+}
+
+// The rows in a column right of Clawd at `cell` px per art cell.
+static void place_console_rows(Layout& L, int cell) {
+    L.clawd_cell = (int8_t)cell;
+    const int16_t col_x = SEAT_X + LAYOUT_CORNER_ACT_W * cell + COL_GAP;
+    const int16_t col_w = L.w - RIGHT_MARGIN - col_x;
+    L.card[0] = { col_x, ROW_TOP, col_w, ROW_H };
+    L.card[1] = { col_x, ROW_TOP + ROW_PITCH, col_w, ROW_H };
+}
+
+static void place_console(Layout& L) {
+    L.side_by_side = true;
+    L.rail = { 0, (int16_t)(L.h - RAIL_H), L.w, RAIL_H };
+    L.seat_x = SEAT_X;
+    L.seat_feet_y = L.rail.y;        // his feet on the rail's top edge
+
+    // Row type and rhythm. No card background or padding: the column is
+    // the card.
+    L.pad_x = L.pad_y = 0;
+    L.bar_y = 32;  L.bar_h = 12;  L.reset_y = 47;
+    L.pill_pad_x = L.pill_pad_y = 0;
+    L.pct_font = &font_styrene_28;   L.ent_pct_font = &font_tiempos_34;
+    L.pill_font = &font_styrene_14;  L.reset_font = &font_styrene_12;
+    L.pace_font = &font_styrene_12;
+
+    // Clawd's cell steps down 4 -> 3 -> 2 until the rows fit beside his
+    // widest act (the laptop) and under the rail; then again with the short
+    // labels; failing that, the smallest cell with smaller numbers.
+    static const char* const* const PILL_SETS[] = { PILL_TEXT, PILL_TEXT_SHORT };
+    int cell = 0;
+    for (const char* const* pills : PILL_SETS) {
+        L.pills = pills;
+        for (int c = 4; c >= 2 && !cell; c--) {
+            place_console_rows(L, c);
+            if (console_fits(L, L.card[0].w) && ROW_TOP + 2 * ROW_PITCH <= L.rail.y) cell = c;
+        }
+        if (cell) break;
+    }
+    if (!cell) {
+        place_console_rows(L, 2);
+        L.pct_font = &font_styrene_20;
+        L.ent_pct_font = &font_styrene_20;
+    }
+
+    // The rail: the clock on the left, the battery after its widest string,
+    // the status line under the column.
+    L.small_icons = true;
+    L.title_font[0] = L.title_font[1] = &font_styrene_20;
+    L.title_x = SEAT_X;
+    L.title_y[0] = L.title_y[1] = L.rail.y + 3;
+    L.title_cx = L.title_x;          // unused: the clock is left-aligned
+    L.logo_x = L.seat_x;             // unused: the seat is on the rail
+    L.logo_y = L.rail.y;
+    L.batt_x = L.title_x + widest_clock(&font_styrene_20, true) + TITLE_GAP;
+    L.batt_y = L.rail.y + 1;
+    L.status_font = &font_mono_18;
+    L.status_x = L.card[0].x - COL_GAP;
+    L.status_w = L.w - L.status_x - STATUS_INSET;
+    L.status_y = -3;
+
+    // Pairing hint, centred in the column: the heading in the clock's size,
+    // the steps and the note small. A step wider than the column wraps and
+    // the lines under it move down.
+    L.pair_y = 0;
+    L.pair_w = L.status_w;
+    L.pair_wrap = false;
+    L.pair_font[0] = &font_styrene_20;
+    L.pair_font[1] = L.pair_font[2] = L.pair_font[3] = &font_styrene_12;
+    static const int16_t PAIR_Y[4] = { 24, 58, 76, 104 };
+    static const char* const* const SETS[] = { PAIR_TEXT_PWR, PAIR_TEXT_TOUCH, PAIR_TEXT_CLEARED };
+    int16_t shift = 0, bottom = 0;
+    for (int i = 0; i < 4; i++) {
+        int lines = 1;
+        for (const char* const* s : SETS) {
+            const int n = wrapped_lines(L.pair_font[i], i < 3 ? s[i] : PAIR_TEXT_HOLDING, L.pair_w);
+            if (n > lines) lines = n;
+        }
+        if (lines > 1) L.pair_wrap = true;
+        int16_t y = PAIR_Y[i] + shift;
+        if (y < bottom) { shift += bottom - y; y = bottom; }
+        L.pair_line_y[i] = y;
+        bottom = y + lines * line_h(L.pair_font[i]);
+    }
+}
+
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
 Layout layout_compute(const LayoutShape& shape) {
@@ -458,9 +569,16 @@ Layout layout_compute(const LayoutShape& shape) {
     // adapted to the panel below.
     const Design* d = nullptr;
     const Chrome* c = nullptr;
+    bool placed = false;
     for (const Design* each : DESIGNS) {
         d = each;
-        if (shape.round ? place_round(L, *d, &c) : place_flow(L, *d, &c)) break;
+        if (shape.round ? place_round(L, *d, &c) : place_flow(L, *d, &c)) { placed = true; break; }
+    }
+    // Wide and short, and nothing fits top-down: Clawd beside the rows.
+    if (!placed && !shape.round && shape.w > shape.h) {
+        place_console(L);
+        fit_period(L);
+        return L;
     }
     if (!shape.round) {
         fit_narrow(L);

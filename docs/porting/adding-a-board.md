@@ -77,6 +77,15 @@ title and status line fit, measured with the real fonts. Then, by shape:
   circle allows at their corners; the header sits right above them and the
   status line right under them, both inside the circle (the small header
   when the large one doesn't fit the chord).
+- **Wide and short** (w > h, and no top-down design fits, e.g. 320×172):
+  the console. Clawd stands beside the meters, big, on a rail along the
+  bottom that holds the clock, the battery and the status line; the two
+  rows sit in a right-hand column in the usage page's idiom (label left,
+  percentage right, bar, reset line), no card behind them. Clawd's cell is
+  stepped 4 → 3 → 2 until the rows fit beside his widest act (then the
+  short labels, then smaller numbers). Spare height is his headroom, spare
+  width goes into the bars. (`Layout.side_by_side`; the LCD-1.47 at 320×172
+  and a T-Display S3 turned sideways, 320×170, in `PANELS`.)
 
 Any text that might not fit is planned for: the 12-hour clock and the
 spend-capped period line take a smaller size when their widest string
@@ -94,8 +103,8 @@ stale data, attention and minimal mode.
 Add a rule to `layout.cpp` only when a whole class of panel looks wrong and
 the test can say why. Key it on shape (narrow, short, aspect, round), never
 on exact dimensions or a board name, and add a `PANELS` entry that needs it.
-A landscape strip with side-by-side cards would be such a rule: another
-arrangement of the cards, chosen when stacking them doesn't fit.
+The console is such a rule: another arrangement of the cards, chosen when
+stacking them doesn't fit a panel wider than it is tall.
 
 ## Include the board in the app and docs
 

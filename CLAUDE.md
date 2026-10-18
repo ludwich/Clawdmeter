@@ -49,7 +49,7 @@ Nested `CLAUDE.md` files load when you read or edit a file in their folder.
 | `freenove_s3_display_nontouch` | Freenove ESP32-S3 Display (FNK0104A, non-touch) | ILI9341 SPI 240×320, minimal UI, BOOT is the only button |
 | `sensecap_indicator_d1l` | Seeed SenseCap Indicator D1L | ST7701S RGB 480×480, FT6x36 touch, PCA9535; GPIO 38 key is the PWR role |
 | `spotpear_s3_154` | SpotPear ESP32-S3-LCD-1.54 MUMA | ST7789 SPI 240×240, CST816 touch, no PMU, BOOT only |
-| `waveshare_lcd_147_c6_nontouch` | Waveshare ESP32-C6-LCD-1.47 (non-touch) | C6 (no PSRAM), ST7789 SPI 172×320, no touch, BOOT only |
+| `waveshare_lcd_147_c6_nontouch` | Waveshare ESP32-C6-LCD-1.47 (non-touch) | C6 (no PSRAM), ST7789 SPI 172×320 run in landscape (320×172), no touch, BOOT only |
 | `sim` | SDL2 desktop simulator | `platform = native`, 480×480 by default |
 | `native` | Host unit tests | |
 

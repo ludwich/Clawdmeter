@@ -10,7 +10,9 @@
 // the type and spacing. A panel takes the largest design that fits it, then
 // a few rules adapt it: narrow panels shorten labels and tighten spacing,
 // tall ones share out their spare height, a short one squeezes, and a round
-// one keeps inside its circle. See docs/porting/adding-a-board.md.
+// one keeps inside its circle. A wide, short panel that none of them fits
+// gets the console: Clawd beside the rows (side_by_side). See
+// docs/porting/adding-a-board.md.
 
 // The panel: its pixel size, and whether the glass is a circle inscribed in
 // that rectangle (BoardCaps.round_panel).
@@ -60,10 +62,26 @@ struct Layout {
     // Pairing hint: four centred lines (heading, two steps, note), each
     // line_y below pair_y. Where a step is wider than pair_w the lines wrap
     // there (pair_wrap) and the lines under them sit lower to make room.
+    // Side by side: centred in the column (status_x .. status_x + pair_w).
     int16_t pair_y, pair_w;
     bool    pair_wrap;
     const lv_font_t* pair_font[4];
     int16_t pair_line_y[4];
+
+    // Wide and short panels (w > h) where no top-down design fits: the
+    // console. Clawd stands on a rail along the bottom, big, and the two
+    // rows sit in a column to his right (card[0] / card[1], no background,
+    // no padding: label top-left, percentage top-right, bar, reset line).
+    // The clock sits in the rail on the left (left-aligned at title_x), the
+    // battery after it, and the status line fills the rail under the column
+    // (left-aligned at status_x, status_w wide). The header fields above
+    // (logo_x/y, title_cx) are unused.
+    bool       side_by_side;
+    LayoutRect rail;                 // the rail: full width, along the bottom
+    int8_t     clawd_cell;           // corner Clawd's cell size (px per art cell)
+    int16_t    seat_x, seat_feet_y;  // his seat: left edge and feet line (the rail's top)
+    int16_t    title_x;              // clock left edge
+    int16_t    status_x;             // status line left edge
 };
 
 Layout layout_compute(const LayoutShape& shape);
@@ -75,6 +93,11 @@ Layout layout_compute(const LayoutShape& shape);
 #define LAYOUT_LOGO_W_SMALL     48
 #define LAYOUT_BATT_W           48   // icons.h ICON_BATTERY_W
 #define LAYOUT_BATT_W_SMALL     24
+// The corner Clawd's acts, in art cells (splash_animations.h; ui.cpp checks
+// them against the real animations): the widest (laptop) sets the console
+// column's left edge, the tallest (jumping happy) the seat's headroom.
+#define LAYOUT_CORNER_ACT_W     34
+#define LAYOUT_CORNER_ACT_H     30
 
 // Pixel width of UTF-8 `text` in `font`, as LVGL draws it (kerning included).
 int32_t layout_text_width(const lv_font_t* font, const char* text);

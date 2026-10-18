@@ -16,6 +16,7 @@
 #include "layout.h"
 #include "ui_text.h"
 #include "pace.h"
+#include <esp_heap_caps.h>
 
 // Where everything goes, from the panel's shape (layout.h). Computed once in
 // ui_init() and treated as const for the rest of the program; a new panel
@@ -247,8 +248,9 @@ static lv_obj_t* make_panel(lv_obj_t* parent, int x, int y, int w, int h) {
     lv_obj_set_pos(panel, x, y);
     lv_obj_set_size(panel, w, h);
     lv_obj_set_style_bg_color(panel, COL_PANEL, 0);
-    lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(panel, 8, 0);
+    // The console's rows have no card behind them: the column is the card.
+    lv_obj_set_style_bg_opa(panel, L.side_by_side ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(panel, L.side_by_side ? 0 : 8, 0);
     lv_obj_set_style_border_width(panel, 0, 0);
     lv_obj_set_style_pad_left(panel, L.pad_x, 0);
     lv_obj_set_style_pad_right(panel, L.pad_x, 0);
@@ -283,13 +285,14 @@ static void init_icon_dsc_rgb565a8(lv_image_dsc_t* dsc, int w, int h, const uint
     dsc->data_size = w * h * 3;
 }
 
+// The card's label: a pill, or on the console a plain dim word.
 static lv_obj_t* make_pill(lv_obj_t* parent, const char* text) {
     lv_obj_t* lbl = lv_label_create(parent);
     lv_label_set_text(lbl, text);
     lv_obj_set_style_text_font(lbl, L.pill_font, 0);
-    lv_obj_set_style_text_color(lbl, COL_TEXT, 0);
+    lv_obj_set_style_text_color(lbl, L.side_by_side ? COL_DIM : COL_TEXT, 0);
     lv_obj_set_style_bg_color(lbl, COL_BAR_BG, 0);
-    lv_obj_set_style_bg_opa(lbl, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_opa(lbl, L.side_by_side ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
     lv_obj_set_style_radius(lbl, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_pad_left(lbl, L.pill_pad_x, 0);
     lv_obj_set_style_pad_right(lbl, L.pill_pad_x, 0);
@@ -318,6 +321,27 @@ static void init_battery_icons(void) {
 
 // ======== Usage Screen ========
 
+// The console's row: the label sits on the percentage's lower half.
+#define CONSOLE_LABEL_Y 11
+
+// The session row's number: "13%" top-right, or the spend-capped account's
+// "42" with a small "%" after it, the pair ending at the row's right edge
+// on a shared baseline. (Top-down cards place the "%" in ui_update.)
+static void place_session_pct(bool ent) {
+    if (!L.side_by_side) return;
+    if (!ent) {
+        lv_obj_align(lbl_session_pct, LV_ALIGN_TOP_RIGHT, 0, 0);
+        return;
+    }
+    const lv_font_t* sym = L.reset_font;
+    const int sym_w = layout_text_width(sym, "%");
+    const int num_top = -3;
+    const int baseline = num_top + lv_font_get_line_height(L.ent_pct_font) - L.ent_pct_font->base_line;
+    lv_obj_align(lbl_session_pct, LV_ALIGN_TOP_RIGHT, -(sym_w + 4), num_top);
+    lv_obj_align(lbl_session_pct_sym, LV_ALIGN_TOP_RIGHT, 0,
+                 baseline - (lv_font_get_line_height(sym) - sym->base_line));
+}
+
 static lv_obj_t* make_usage_panel(lv_obj_t* parent, const LayoutRect& r, const char* pill_text,
                                   lv_obj_t** out_pct, lv_obj_t** out_pill,
                                   lv_obj_t** out_bar, lv_obj_t** out_reset) {
@@ -327,10 +351,16 @@ static lv_obj_t* make_usage_panel(lv_obj_t* parent, const LayoutRect& r, const c
     lv_label_set_text(*out_pct, "--%");
     lv_obj_set_style_text_font(*out_pct, L.pct_font, 0);
     lv_obj_set_style_text_color(*out_pct, COL_TEXT, 0);
-    lv_obj_set_pos(*out_pct, 0, 0);
 
     *out_pill = make_pill(panel, pill_text);
-    lv_obj_align(*out_pill, LV_ALIGN_TOP_RIGHT, 0, 1);
+    if (L.side_by_side) {
+        // The console's row: the label top-left, the percentage top-right.
+        lv_obj_align(*out_pct, LV_ALIGN_TOP_RIGHT, 0, 0);
+        lv_obj_align(*out_pill, LV_ALIGN_TOP_LEFT, 0, CONSOLE_LABEL_Y);
+    } else {
+        lv_obj_set_pos(*out_pct, 0, 0);
+        lv_obj_align(*out_pill, LV_ALIGN_TOP_RIGHT, 0, 1);
+    }
 
     *out_bar = make_bar(panel, 0, L.bar_y, r.w - 2 * L.pad_x, L.bar_h);
 
@@ -377,8 +407,13 @@ static lv_obj_t* make_pair_line(int i, lv_color_t color) {
 
 static void build_pair_group(lv_obj_t* parent) {
     pair_group = lv_obj_create(parent);
-    lv_obj_set_size(pair_group, L.w, L.h - L.pair_y);
-    lv_obj_set_pos(pair_group, 0, L.pair_y);
+    if (L.side_by_side) {   // the column above the rail; its lines centre in it
+        lv_obj_set_size(pair_group, L.pair_w, L.rail.y - L.pair_y);
+        lv_obj_set_pos(pair_group, L.status_x, L.pair_y);
+    } else {
+        lv_obj_set_size(pair_group, L.w, L.h - L.pair_y);
+        lv_obj_set_pos(pair_group, 0, L.pair_y);
+    }
     lv_obj_set_style_bg_opa(pair_group, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(pair_group, 0, 0);
     lv_obj_set_style_pad_all(pair_group, 0, 0);
@@ -413,8 +448,29 @@ static void apply_title_font(void) {
         return;
     }
     lv_obj_set_style_text_font(lbl_title, f, 0);
-    lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, L.title_cx - L.w / 2, L.title_y[fmt]);
+    if (L.side_by_side) lv_obj_set_pos(lbl_title, L.title_x, L.title_y[fmt]);   // in the rail, left
+    else                lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, L.title_cx - L.w / 2, L.title_y[fmt]);
     lv_obj_clear_flag(lbl_title, LV_OBJ_FLAG_HIDDEN);
+}
+
+// The console's rail: a band along the bottom that Clawd stands on, with a
+// lighter line along its top edge (the floor). Created first, under
+// everything else.
+static void build_rail(lv_obj_t* scr) {
+    lv_obj_t* rail = lv_obj_create(scr);
+    lv_obj_remove_style_all(rail);
+    lv_obj_set_pos(rail, L.rail.x, L.rail.y);
+    lv_obj_set_size(rail, L.rail.w, L.rail.h);
+    lv_obj_set_style_bg_color(rail, COL_PANEL, 0);
+    lv_obj_set_style_bg_opa(rail, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(rail, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_t* edge = lv_obj_create(scr);
+    lv_obj_remove_style_all(edge);
+    lv_obj_set_pos(edge, L.rail.x, L.rail.y);
+    lv_obj_set_size(edge, L.rail.w, 1);
+    lv_obj_set_style_bg_color(edge, COL_BAR_BG, 0);
+    lv_obj_set_style_bg_opa(edge, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(edge, LV_OBJ_FLAG_CLICKABLE);
 }
 
 static void init_usage_screen(lv_obj_t* scr) {
@@ -482,7 +538,17 @@ static void init_usage_screen(lv_obj_t* scr) {
     lv_label_set_text(lbl_anim, "");
     lv_obj_set_style_text_font(lbl_anim, L.status_font, 0);
     lv_obj_set_style_text_color(lbl_anim, COL_ACCENT, 0);
-    lv_obj_align(lbl_anim, LV_ALIGN_BOTTOM_MID, 0, L.status_y);
+    if (L.side_by_side) {
+        // In the rail under the column: a fixed one-line slot, left-aligned,
+        // that an alert scrolls inside.
+        const int lh = lv_font_get_line_height(L.status_font);
+        lv_obj_set_size(lbl_anim, L.status_w, lh);
+        lv_obj_set_pos(lbl_anim, L.status_x, L.h + L.status_y - lh);
+        lv_obj_set_style_text_align(lbl_anim, LV_TEXT_ALIGN_LEFT, 0);
+    } else {
+        lv_obj_align(lbl_anim, LV_ALIGN_BOTTOM_MID, 0, L.status_y);
+        lv_obj_set_style_text_align(lbl_anim, LV_TEXT_ALIGN_CENTER, 0);
+    }
 }
 
 // ---- Attention message on the status line (the director sequences the rest).
@@ -512,6 +578,7 @@ void ui_init(void) {
     else               init_icon_dsc_rgb565a8(&logo_dsc, CLAWD_STILL_W, CLAWD_STILL_H, clawd_still_data);
     init_battery_icons();
 
+    if (L.side_by_side) build_rail(scr);   // the floor, under everything
     init_usage_screen(scr);
 
     battery_img = lv_image_create(scr);
@@ -522,6 +589,41 @@ void ui_init(void) {
     if (!board_caps().has_battery) {
         lv_obj_del(battery_img);
         battery_img = nullptr;
+    }
+
+    // The console: Clawd stands on the rail beside the rows, at the cell the
+    // layout sized the column for. Its buffer (the laptop act: 34x23 cells,
+    // 37.5 KB at 4 px, internal RAM on the C6) may not fit; then he's a step
+    // smaller, moved in so he still stands by the column, and failing that
+    // the still Clawd stands there.
+    if (L.side_by_side) {
+        const ClawdAnim* laptop = clawd_anim("laptop");
+        const ClawdAnim* jump = clawd_anim("jumping happy");
+        if ((laptop && laptop->w != LAYOUT_CORNER_ACT_W) || (jump && jump->h != LAYOUT_CORNER_ACT_H))
+            Serial.println("meters: LAYOUT_CORNER_ACT_W/H don't match the animations");
+        int cell = L.clawd_cell, seat_x = L.seat_x;
+        // The jump clears the top edge from the rail on any panel 150 px or
+        // taller; shorter, mascot_act plays a shorter act instead.
+        const int feet = jump ? corner_seat_feet(L.seat_feet_y, jump->h * cell, L.seat_feet_y, 2)
+                              : L.seat_feet_y;
+        lv_obj_t* m = mascot_create(scr, seat_x, feet, cell);
+        if (!m && cell > 3) {
+            cell = 3;
+            seat_x += 12;
+            m = mascot_create(scr, seat_x, feet, cell);
+        }
+        if (m) {
+            Serial.printf("meters: corner Clawd cell %d at (%d,%d), %u B free\n", cell, seat_x, feet,
+                          (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+        } else {
+            logo_img = lv_image_create(scr);
+            lv_image_set_src(logo_img, &logo_dsc);
+            lv_obj_set_pos(logo_img, seat_x + 24, feet - CLAWD_STILL_SMALL_H);
+            Serial.println("meters: no room for the corner Clawd, still frame");
+        }
+        performer_init(scr, L.rail.y);
+        anim_verb_idx = fitting_verb(0);
+        return;
     }
 
     // Corner mascot in the old logo slot. The still Clawd is shorter than the
@@ -555,7 +657,6 @@ void ui_init(void) {
     // last panel, clear of the (Clawd-orange) status line.
     performer_init(scr, L.card[1].y + L.card[1].h);
 
-    lv_obj_set_style_text_align(lbl_anim, LV_TEXT_ALIGN_CENTER, 0);
     anim_verb_idx = fitting_verb(0);
 }
 
@@ -640,9 +741,10 @@ void ui_update(const UsageData* data) {
 
     if (data->enterprise) {
         lv_label_set_text_fmt(lbl_session_pct, "%d", s_pct);
-        lv_obj_align_to(lbl_session_pct_sym, lbl_session_pct,
-                        LV_ALIGN_OUT_RIGHT_TOP, 4, 12);
+        if (L.side_by_side) place_session_pct(true);
+        else lv_obj_align_to(lbl_session_pct_sym, lbl_session_pct, LV_ALIGN_OUT_RIGHT_TOP, 4, 12);
     } else {
+        place_session_pct(false);
         lv_label_set_text_fmt(lbl_session_pct, "%d%%", s_pct);
         format_reset_time(data->session_reset_mins, buf, sizeof(buf), "Not started");
         lv_label_set_text(lbl_session_reset, buf);
@@ -847,7 +949,7 @@ void ui_set_alert_text(const char* message) {
     if (!alert_active) return;
     alert_active = false;
     lv_label_set_long_mode(lbl_anim, LV_LABEL_LONG_WRAP);
-    lv_obj_set_size(lbl_anim, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    if (!L.side_by_side) lv_obj_set_size(lbl_anim, LV_SIZE_CONTENT, LV_SIZE_CONTENT);   // the console's slot stays
     anim_last_ms = 0;          // whimsical line redraws on the next tick
     still_shown = nullptr;
     frozen_shown = nullptr;

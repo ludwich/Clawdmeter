@@ -10,6 +10,10 @@
 //           laptop while Claude works, lit by the local time (stage.h, scene.h)
 //   usage   landscape: just the two usage bars, large
 //
+// A board whose native orientation already is landscape (BoardCaps wider
+// than tall, display_hal_set_landscape a no-op returning true) keeps one
+// orientation throughout: nothing turns between pages.
+//
 // Elsewhere the meters are the only page and nothing here changes anything.
 // While another page is up the director is offstage (clawd_director.h); an
 // alert shows on the Clawd page (pages_on_alert).

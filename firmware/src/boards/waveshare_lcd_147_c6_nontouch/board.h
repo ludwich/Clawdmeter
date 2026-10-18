@@ -1,7 +1,7 @@
 #pragma once
 
-// Waveshare ESP32-C6-LCD-1.47 -- 1.47" 172x320 portrait IPS TFT, ST7789 over
-// plain 4-wire SPI. ESP32-C6FH8: 8 MB in-package flash, no PSRAM. No touch,
+// Waveshare ESP32-C6-LCD-1.47 -- 1.47" 172x320 IPS TFT (run in landscape,
+// 320x172), ST7789 over plain 4-wire SPI. ESP32-C6FH8: 8 MB in-package flash, no PSRAM. No touch,
 // no PMU, no IMU, no audio. The TF slot shares the SPI bus (CS GPIO 4) and an
 // onboard WS2812 sits on GPIO 8; neither is used by the firmware.
 //
@@ -10,9 +10,16 @@
 
 #define BOARD_NAME           "Waveshare LCD 1.47 (C6)"
 
-// ---- Display geometry (portrait) ----
-#define LCD_WIDTH            172
-#define LCD_HEIGHT           320
+// ---- Display geometry ----
+// The glass is 172x320 portrait (LCD_PANEL_*), but the firmware runs it in
+// landscape: the panel is turned a quarter turn at init (MADCTL, USB-C on
+// the left when it stands in its desk stand), so BoardCaps and LVGL see
+// 320x172 and every page, the meters included, is landscape.
+#define LCD_PANEL_WIDTH      172
+#define LCD_PANEL_HEIGHT     320
+#define LCD_ROTATION         1
+#define LCD_WIDTH            320
+#define LCD_HEIGHT           172
 
 // ---- SPI display pins (ST7789) ----
 #define LCD_MOSI             6

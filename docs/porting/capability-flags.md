@@ -48,7 +48,10 @@ default returns `false` and those boards keep the meters as their only page
 and the PWR button's single press as brightness. Implementing it changes the
 PWR-role button: one press is the next page, two presses within 350 ms cycle
 brightness. Say so in the board's `CLAUDE.md`. The Clawd page allocates its
-~60 KB sprite buffer only while it's shown, so it fits a C6.
+~60 KB sprite buffer only while it's shown, so it fits a C6. A board that
+runs its panel in landscape natively (the LCD-1.47: `BoardCaps` 320×172,
+the quarter turn applied at init) implements it as a no-op that returns
+`true`: the pages lay out at the native resolution and nothing turns.
 
 ## Build-flag macros
 
