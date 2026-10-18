@@ -1,6 +1,8 @@
 #pragma once
 #include "data.h"
 #include "ble.h"
+#include <lvgl.h>
+#include <stddef.h>
 
 // The meters room: clock, the two usage cards, the status line, battery and
 // the corner Clawd's seat. Rooms, transitions and attention sequencing belong
@@ -27,6 +29,13 @@ enum PairHint {
     PAIR_HINT_CLEARED,   // bonds were just cleared: ready to pair (reverts by itself)
 };
 void ui_set_pair_hint(PairHint hint);
+
+// The meters' LVGL screen (the extra pages load their own, pages.h).
+lv_obj_t* ui_screen(void);
+// The meters' bar colour for a window (usage %, pace marker setting) and
+// its "Resets in ..." line, shared with the usage page.
+lv_color_t ui_bar_color(float used_pct, int reset_mins, int window_mins);
+void ui_format_reset(int mins, char* buf, size_t len, const char* none);
 
 // Attention message on the status line (scrolls when long); NULL clears it
 // and the whimsical status line resumes.

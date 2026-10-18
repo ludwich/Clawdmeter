@@ -76,6 +76,19 @@ static void test_long_turn_earns_a_wave(void) {
     TEST_ASSERT_FALSE(turn_on_event(&t, 's', 5 * MIN, &T));     // a 1-minute turn
 }
 
+static void test_working_while_a_turn_is_open_or_tools_run(void) {
+    TurnTracker t; turn_clear(&t);
+    TEST_ASSERT_FALSE(clawd_working(&t, 0, 0));                  // nothing yet
+    TEST_ASSERT_TRUE(clawd_working(&t, 0, 1));                   // tools in the last minute
+    turn_on_event(&t, 'p', 1 * MIN, &T);
+    TEST_ASSERT_TRUE(clawd_working(&t, 2 * MIN, 0));             // prompt, no Stop yet
+    TEST_ASSERT_FALSE(clawd_working(&t, 12 * MIN, 0));           // the Stop never came
+    turn_on_event(&t, 's', 13 * MIN, &T);
+    TEST_ASSERT_FALSE(clawd_working(&t, 13 * MIN, 0));           // stopped
+    TEST_ASSERT_FALSE(clawd_working(&t, 13 * MIN + 30 * SEC, 1)); // the last minute's tools, before the Stop
+    TEST_ASSERT_TRUE(clawd_working(&t, 15 * MIN, 1));            // tools well after it
+}
+
 static void test_pick_never_repeats(void) {
     static const char* const acts[] = { "dancing", "waving", "dancing", "lurking" };
     ClawdRng r; clawd_rng_seed(&r, 42);
@@ -387,6 +400,7 @@ int main(int, char**) {
     RUN_TEST(test_screensaver_without_hooks_only_for_unstarted_window);
     RUN_TEST(test_engagement_wraps_safely);
     RUN_TEST(test_long_turn_earns_a_wave);
+    RUN_TEST(test_working_while_a_turn_is_open_or_tools_run);
     RUN_TEST(test_pick_never_repeats);
     RUN_TEST(test_jitter_stays_within_40_percent);
     RUN_TEST(test_face_rhythm_is_irregular_with_some_double_blinks);

@@ -42,13 +42,14 @@ SignalsUpdate signals_ingest_at(const UsageData* d, uint32_t now_ms) {
             have_seq = true;                 // baseline, don't react
             last_seq = d->event_seq;
         } else if (d->event_seq != last_seq) {
+            // `rp` says the usage numbers are a replay; the app (v2.2.x)
+            // also sets it on every hook-event write, so a new `es` fires
+            // even then. The seq itself dedupes a heartbeat's repeat.
             last_seq = d->event_seq;
-            if (!d->replay) {
-                u.event_fired = true;
-                u.event = d->event;
-                u.event_seq = d->event_seq;
-                last_event = d->event;
-            }
+            u.event_fired = true;
+            u.event = d->event;
+            u.event_seq = d->event_seq;
+            last_event = d->event;
         }
     }
 

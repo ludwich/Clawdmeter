@@ -8,6 +8,7 @@
 #include "idle.h"
 #include "minimal_mode.h"
 #include "hal/board_caps.h"
+#include <stdio.h>
 #include "usage_rate.h"
 #include <Arduino.h>
 #include <lvgl.h>
@@ -42,6 +43,7 @@ static bool     notice_wake = false;  // B_FACE_HOME: blink first (he noticed yo
 
 // Attention
 static bool     attention_on = false;
+static char     alert_message[128] = "";   // the alert text, for the Clawd page
 static bool     attention_dismissed = false;  // ended here; the app hasn't heard
 static bool     pairing_touch = false;        // director_set_pairing_touch
 static uint32_t attention_since = 0;
@@ -196,6 +198,7 @@ void director_alert(const char* message) {
     attention_since = now_ms();
     attn_anim_done = false;                   // a new alert gets its animation again
     ui_set_alert_text(message);
+    snprintf(alert_message, sizeof(alert_message), "%s", message ? message : "");
     if (attention_on) return;                 // refresh text + timers only
     attention_on = true;
     if (beat == B_ATTENTION) { step = 0; return; }
@@ -652,13 +655,26 @@ static void run_home(uint32_t now) {
         go(B_SHOW);
 }
 
+static bool offstage = false;
+static bool working_now = false;
+void director_set_offstage(bool on) {
+    if (offstage && !on) last_engagement = now_ms();   // back on the meters: you're here
+    offstage = on;
+}
+bool director_claude_working(void) { return working_now; }
+bool        director_alert_active(void)  { return attention_on; }
+const char* director_alert_message(void) { return alert_message; }
+
 void director_tick(void) {
     const uint32_t now = now_ms();
     const int activity = signals_activity();
     show_gate_update(&show_gate, now, activity, &clawd_tuning());
     // Tool calls flowing (PostToolUse) are hook events too: you're working.
     if (activity > 0) last_engagement = now;
+    working_now = clawd_working(&turn, now, activity);
+    mascot_set_working(working_now);
     face_tick();
+    if (offstage && beat != B_ATTENTION) return;
 
     switch (beat) {
     case B_HOME:        run_home(now); break;

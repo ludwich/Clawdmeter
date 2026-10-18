@@ -29,7 +29,7 @@ struct SignalsUpdate {
 
 // Event dedupe rule: the device reacts once per distinct `es`. The first `es`
 // seen after boot only sets the baseline (it describes something that
-// happened before we were listening), and replays never fire. Any change in
+// happened before we were listening). A new `es` fires even on an `rp` write (the app marks hook-event writes rp); a repeat of the same `es` never does. Any change in
 // `es` fires, not just an increase, so a daemon restart that resets its
 // counter is still noticed.
 

@@ -21,6 +21,7 @@ static const Panel PANELS[] = {
     { "LilyGO T4-S3",         450, 600, false },
     { "T4-S3 landscape",      600, 450, false },
     { "T-Display S3",         170, 320, false },
+    { "LCD-1.47 (C6)",        172, 320, false },
     { "M5StickS3",            135, 240, false },
     { "AMOLED-1.32 / 1.43",   466, 466, true  },
     { "ePaper 1.54",          200, 200, false },

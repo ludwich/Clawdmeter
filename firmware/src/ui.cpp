@@ -157,6 +157,9 @@ static uint8_t fitting_verb(uint8_t i) {
     return i;
 }
 
+static lv_obj_t* meters_scr = nullptr;
+lv_obj_t* ui_screen(void) { return meters_scr; }
+
 static lv_color_t pct_color(float pct) {
     if (pct >= 80.0f) return COL_RED;
     if (pct >= 50.0f) return COL_AMBER;
@@ -229,6 +232,13 @@ static void format_reset_time(int mins, char* buf, size_t len, const char* none)
     } else {
         snprintf(buf, len, "Resets in %dd %dh", mins / 1440, (mins % 1440) / 60);
     }
+}
+
+lv_color_t ui_bar_color(float used_pct, int reset_mins, int window_mins) {
+    return bar_color(used_pct, reset_mins, window_mins);
+}
+void ui_format_reset(int mins, char* buf, size_t len, const char* none) {
+    format_reset_time(mins, buf, len, none);
 }
 
 static lv_obj_t* make_panel(lv_obj_t* parent, int x, int y, int w, int h) {
@@ -485,6 +495,7 @@ void ui_init(void) {
     L = layout_compute({ caps.width, caps.height, caps.round_panel });
 
     lv_obj_t* scr = lv_screen_active();
+    meters_scr = scr;
     lv_obj_set_style_bg_color(scr, COL_BG, 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
     // The screen is a fixed room, not a scroll view. Left scrollable (the

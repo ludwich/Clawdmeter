@@ -216,9 +216,17 @@ bool turn_on_event(TurnTracker* t, char event, uint32_t now, const ClawdTuning* 
         const bool long_turn = t->in_turn &&
             (uint32_t)(now - t->prompt_at) >= tune->long_turn_ms;
         t->in_turn = false;
+        t->stopped = true;
+        t->stopped_at = now;
         return long_turn;
     }
     return false;
+}
+
+bool clawd_working(const TurnTracker* t, uint32_t now, int activity) {
+    if (t->in_turn) return (uint32_t)(now - t->prompt_at) < CLAWD_WORKING_TURN_MS;
+    const bool just_stopped = t->stopped && (uint32_t)(now - t->stopped_at) < CLAWD_WORKING_STOP_MS;
+    return activity > 0 && !just_stopped;
 }
 
 // ─── Shows ───────────────────────────────────────────────────────────────────

@@ -46,15 +46,16 @@ static void test_first_seq_is_baseline_then_fires_once(void) {
     TEST_ASSERT_FALSE(signals_ingest_at(&d, 3000).event_fired);
 }
 
-static void test_replay_never_fires(void) {
+static void test_new_seq_on_a_replay_fires_once(void) {
     UsageData d = parse("{\"s\":1,\"e\":\"p\",\"es\":1}");
     signals_ingest_at(&d, 1000);
+    // The app marks hook-event writes rp (their usage numbers aren't a poll).
     d = parse("{\"s\":1,\"e\":\"b\",\"es\":2,\"rp\":1}");
     SignalsUpdate u = signals_ingest_at(&d, 2000);
     TEST_ASSERT_TRUE(u.replay);
-    TEST_ASSERT_FALSE(u.event_fired);
-    // ...and the replayed seq is consumed, so the live copy doesn't fire late.
-    d = parse("{\"s\":1,\"e\":\"b\",\"es\":2}");
+    TEST_ASSERT_TRUE(u.event_fired);
+    // ...and a heartbeat repeating the same seq doesn't fire it again.
+    d = parse("{\"s\":1,\"e\":\"b\",\"es\":2,\"rp\":1}");
     TEST_ASSERT_FALSE(signals_ingest_at(&d, 3000).event_fired);
 }
 
@@ -119,7 +120,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_old_daemon_payload_fires_nothing);
     RUN_TEST(test_first_seq_is_baseline_then_fires_once);
-    RUN_TEST(test_replay_never_fires);
+    RUN_TEST(test_new_seq_on_a_replay_fires_once);
     RUN_TEST(test_seq_restart_still_fires);
     RUN_TEST(test_activity_lift_in_group);
     RUN_TEST(test_replay_skips_rate_but_keeps_activity);
