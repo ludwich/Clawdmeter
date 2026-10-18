@@ -104,6 +104,14 @@ static int16_t cap_top(const lv_font_t* font) {
     return (int16_t)(line_h(font) - font->base_line - (g.ofs_y + g.box_h));
 }
 
+// How far a 'g' in `font` hangs under the baseline: the deepest tail a
+// title word ("Usage") draws. Digits have none.
+static int16_t descender(const lv_font_t* font) {
+    lv_font_glyph_dsc_t g;
+    if (!lv_font_get_glyph_dsc(font, &g, 'g', 0) || g.ofs_y >= 0) return 0;
+    return (int16_t)-g.ofs_y;
+}
+
 static int16_t widest(const lv_font_t* f, const char* const* texts, int n) {
     int32_t w = 0;
     for (int i = 0; i < n; i++) {
@@ -520,6 +528,7 @@ static bool place_round(Layout& L, const Design& d, const Chrome** chrome) {
 #define ROW_H          62   // label 14, percentage 30, bar at 30, reset line at 47
 #define RIGHT_MARGIN   10   // the rows end this far from the right edge
 #define SEAT_X         12   // Clawd's seat, from the left edge
+#define TITLE_APEX_GAP  2   // rows between the title's deepest ink and the jump's apex
 #define PAIR_INSET      4   // the pairing hint's lines may run this close to the right edge
 
 // The console's rows fit a column col_w wide: a label beside "100%", the
@@ -580,19 +589,20 @@ static void place_console(Layout& L) {
     // cap top on the first row's number's cap top, so the word, the clock
     // and the percentages share one line. The battery after its widest
     // string. Jumping happy rises to the seat's apex, under the clock's own
-    // x-span (every act starts at the seat): where the apex reaches the
-    // clock's baseline, the clock moves up to clear it by a pixel (digits
-    // have no descenders; "Usage"'s g tail is the one thing he may brush).
+    // x-span (every act starts at the seat): where the apex would come
+    // within TITLE_APEX_GAP of the title's ink, its "g" tail included (the
+    // "Usage" word before the daemon's clock arrives), the clock moves up
+    // off the grid until it clears. No title word is ever painted over.
     L.small_icons = true;
     const lv_font_t* title_font = &font_styrene_20;
     L.title_font[0] = L.title_font[1] = title_font;
     L.title_x = SEAT_X;
-    const int16_t title_ink_h = line_h(title_font) - title_font->base_line;   // top edge to baseline
+    const int16_t title_ink_h = line_h(title_font) - title_font->base_line + descender(title_font);
     int16_t title_y = L.card[0].y + cap_top(L.pct_font) - cap_top(title_font);
     const int16_t apex = L.seat_feet_y - LAYOUT_CORNER_ACT_H * L.clawd_cell;
     const int16_t jump_right = L.seat_x + LAYOUT_CORNER_JUMP_W * L.clawd_cell;
-    if (L.title_x < jump_right && apex < title_y + title_ink_h) {
-        title_y = apex - title_ink_h - 1;
+    if (L.title_x < jump_right && title_y + title_ink_h + TITLE_APEX_GAP > apex) {
+        title_y = apex - TITLE_APEX_GAP - title_ink_h;
         if (title_y < 0) title_y = 0;
     }
     L.title_y[0] = L.title_y[1] = title_y;

@@ -215,9 +215,10 @@ him. On a wide, short panel (the console layout, 320×172) the seat is on the
 rail floor at the bottom, so the whole height is headroom: the jump's apex is
 at y 26 and no act is swapped. The clock sits top-left in that air, over the
 seat (every act starts at the seat's left edge, so the jump rises under the
-clock's own x-span): `layout.cpp` keeps it at y 8 where the apex leaves
-room, else moves it up to clear the apex by a pixel (y 4 on 320×172, the
-20 px line ending at y 25).
+clock's own x-span): `layout.cpp` keeps its cap top on the first row's
+number's where the apex leaves room, else moves it up until the apex is 2 px
+under the title's deepest ink, the "Usage" g's tail included (y 3 on
+320×172: ink y 6..23, apex y 26). No title word is ever painted over.
 
 **Engagement** resets the screensaver clock. Engagement is any fired hook
 event, any activity level above 0 (tool calls are hook events too), a tap, a
@@ -358,8 +359,10 @@ a board capability, with no NVS override, desktop setting, or serial toggle.
   on y 146, with the whole height as headroom (jumping happy's apex at y 26,
   no tall-act swap). The laptop act (136×92) stays inside x 12..148, left of
   the instrument column; the clock and the battery sit top-left above his
-  head, on the grid (the clock's cap top on the first row's number's, y 9;
-  the jump's apex stops exactly at its baseline); the status line runs the
+  head, on the grid (the clock's cap top on the first row's number's where
+  the jump leaves room; at 320×172 the apex at y 26 moves it up to y 3, the
+  "Usage" g's tail ending 2 px above the apex); each row's label shares its
+  number's baseline (`ui.cpp` `console_label_y`); the status line runs the
   rail from his seat to the bars' right edge (x 12..310, the spinner under
   his feet), so an alert reads at a glance and only a long one scrolls. The
   rail is the bar tracks' grey, with a dim floor line along its top. His

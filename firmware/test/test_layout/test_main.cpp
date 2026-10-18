@@ -165,15 +165,16 @@ static void check_console(const Panel& p) {
 
     // The clock's widest string top-left, then the battery: on the glass,
     // above the rail, left of the column, clear of every act at the seat.
-    // Against the acts (jumping happy's apex included) the clock is its ink
-    // down to the baseline: digits have no descenders, and the layout lets
-    // the apex come up to that line.
+    // Against the acts the title is its ink down to the "g" tail of the
+    // "Usage" word it shows before the clock arrives, and jumping happy's
+    // apex stays TITLE_APEX_GAP rows under that: no title word hidden, ever.
     for (title_fmt = 0; title_fmt < 2; title_fmt++) {
         const lv_font_t* f = L.title_font[title_fmt];
         if (!f) fail("console without a clock", rail());
         const int w = widest_clock(f, title_fmt == 1);
         const Box t = { L.title_x, L.title_y[title_fmt], w, line_h(f) };
-        const Box ink = { t.x, t.y, t.w, line_h(f) - f->base_line };
+        const int ink_bottom = t.y + line_h(f) - f->base_line + descender(f);
+        const Box ink = { t.x, t.y, t.w, ink_bottom - t.y + TITLE_APEX_GAP };
         check_on_glass("clock", t);
         if (t.y + t.h > L.rail.y) fail("clock vs rail", t);
         check_apart("clock vs battery", t, battery());
@@ -182,7 +183,17 @@ static void check_console(const Panel& p) {
             const Box b = { L.seat_x, L.seat_feet_y - a.h * L.clawd_cell, a.w * L.clawd_cell, a.h * L.clawd_cell };
             check_apart(a.name, ink, b);
         }
+        const int apex = L.seat_feet_y - LAYOUT_CORNER_ACT_H * L.clawd_cell;
+        if (L.title_x < L.seat_x + LAYOUT_CORNER_JUMP_W * L.clawd_cell && ink_bottom + TITLE_APEX_GAP > apex)
+            fail("jump's apex into the title's ink", ink);
     }
+
+    // The row's label shares its number's baseline (ui.cpp console_label_y):
+    // the label's line starts at or under the row's top edge for both the
+    // plain and the spend-capped number.
+    const int label_asc = line_h(L.pill_font) - L.pill_font->base_line;
+    if (line_h(L.pct_font) - L.pct_font->base_line - label_asc < 0) fail("label above its row", card(0));
+    if (-3 + line_h(L.ent_pct_font) - L.ent_pct_font->base_line - label_asc < 0) fail("label above its row (spend)", card(0));
     check_on_glass("battery", battery());
     if (battery().y + battery().h > L.rail.y) fail("battery vs rail", battery());
     check_apart("battery vs column", battery(), column);

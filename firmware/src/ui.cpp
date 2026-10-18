@@ -321,8 +321,19 @@ static void init_battery_icons(void) {
 
 // ======== Usage Screen ========
 
-// The console's row: the label sits on the percentage's lower half.
-#define CONSOLE_LABEL_Y 11
+// The console's row: the percentage top-right on the row's top edge (a
+// spend-capped account's bigger number a little above it, so its baseline
+// lands near the same line) and the label on the number's baseline, whatever
+// the font pair: its line's top edge is the number's baseline less the
+// label's own ascent.
+#define CONSOLE_ENT_NUM_TOP (-3)
+static int32_t console_baseline(bool ent) {
+    const lv_font_t* f = ent ? L.ent_pct_font : L.pct_font;
+    return (ent ? CONSOLE_ENT_NUM_TOP : 0) + lv_font_get_line_height(f) - f->base_line;
+}
+static int32_t console_label_y(bool ent) {
+    return console_baseline(ent) - (lv_font_get_line_height(L.pill_font) - L.pill_font->base_line);
+}
 
 // The console's rows have no card: their edges are the column's, and the
 // eye lines the ink up with them, not the labels' boxes. A label on the
@@ -349,8 +360,8 @@ static void place_session_pct(bool ent) {
     }
     const lv_font_t* sym = L.reset_font;
     const int sym_w = layout_text_width(sym, "%");
-    const int num_top = -3;
-    const int baseline = num_top + lv_font_get_line_height(L.ent_pct_font) - L.ent_pct_font->base_line;
+    const int num_top = CONSOLE_ENT_NUM_TOP;
+    const int baseline = console_baseline(true);
     const int sym_rsb = layout_ink_rsb(sym, "%");
     lv_obj_align(lbl_session_pct, LV_ALIGN_TOP_RIGHT, sym_rsb - (sym_w + 4), num_top);
     lv_obj_align(lbl_session_pct_sym, LV_ALIGN_TOP_RIGHT, sym_rsb,
@@ -372,7 +383,7 @@ static lv_obj_t* make_usage_panel(lv_obj_t* parent, const LayoutRect& r, const c
         // The console's row: the label top-left, the percentage top-right,
         // their ink on the column's edges.
         ink_right(*out_pct, 0, 0);
-        ink_left(*out_pill, CONSOLE_LABEL_Y);
+        ink_left(*out_pill, console_label_y(false));
     } else {
         lv_obj_set_pos(*out_pct, 0, 0);
         lv_obj_align(*out_pill, LV_ALIGN_TOP_RIGHT, 0, 1);
@@ -771,7 +782,7 @@ void ui_update(const UsageData* data) {
         lv_label_set_text(lbl_session_reset, buf);
     }
     if (L.side_by_side) {   // the labels' first glyphs changed with their text
-        ink_left(lbl_session_label, CONSOLE_LABEL_Y);
+        ink_left(lbl_session_label, console_label_y(data->enterprise));
         ink_left(lbl_session_reset, L.reset_y);
     }
 
@@ -803,7 +814,7 @@ void ui_update(const UsageData* data) {
         lv_label_set_text(lbl_weekly_reset, buf);
     }
     if (L.side_by_side) {
-        ink_left(lbl_weekly_label, CONSOLE_LABEL_Y);
+        ink_left(lbl_weekly_label, console_label_y(false));
         // The period line is recoloured ("#hex text#"), so its ink starts at
         // the first glyph after the markup: the bearing comes from "Resets".
         lv_obj_align(lbl_weekly_reset, LV_ALIGN_TOP_LEFT,
