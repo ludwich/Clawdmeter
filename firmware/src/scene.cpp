@@ -1,6 +1,7 @@
 #include "scene.h"
 #include "field.h"
 #include "theme.h"
+#include "burndown.h"
 #include "scene_office.h"
 #include "scene_outdoor.h"
 
@@ -24,6 +25,21 @@ static const int8_t HAND_SIN[60] = {
     -55, -58, -61, -63, -64, -64, -64, -63, -61, -58, -55, -52, -48, -43, -38, -32, -26, -20, -13, -7,
 };
 
+// 7-segment digits, bits a..g = 0..6 (a top, b top-right, c bottom-right,
+// d bottom, e bottom-left, f top-left, g middle); 10 is "-". scenekit.py SEG7.
+static const uint8_t SEG7[11] = { 0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F, 0x40 };
+#define SEG_DASH  10
+#define COLON_MS  500            // the countdown's colon: on, off, each half second
+
+// "H:MM": the three digits' x and the colon's, a stroke-wide gap between
+// everything (scenekit.py digits_layout).
+static void digits_layout(int x, int dw, int t, int xs[3], int* xc) {
+    *xc = x + dw + t;
+    xs[0] = x;
+    xs[1] = *xc + 2 * t;
+    xs[2] = xs[1] + dw + t;
+}
+
 static_assert(sizeof(scene_office_groups) / sizeof(scene_office_groups[0]) <= SCENE_MAX_GROUPS,
               "office: too many groups");
 static_assert(sizeof(scene_outdoor_groups) / sizeof(scene_outdoor_groups[0]) <= SCENE_MAX_GROUPS,
@@ -45,6 +61,12 @@ static uint8_t         group_tod[SCENE_MAX_GROUPS];   // when any of its rects s
 static uint32_t        anim_at = 0;
 static uint32_t        now_ms = 0;      // scene_tick's clock
 static SceneCoveredCb  covered_cb = NULL;
+// The live wall (scene_set_live).
+static int             countdown = -1;  // minutes left in the 5-hour window, -1 unknown
+static bool            colon_on = true;
+static const Burndown* week = NULL;
+static int             week_now = -1;
+static uint16_t        week_rev = 0;
 
 static Wipe     wipe = W_NONE;
 static bool     wipe_up = false;        // cascade from the bottom (leaving the office)
@@ -101,6 +123,22 @@ static bool group_shows(int i) { return (group_tod[i] & tod_bit) != 0; }
 
 static void invalidate_box(const SceneGroup* g, int dx) {
     invalidate(base, g->box[0] + dx, g->box[1], g->box[2], g->box[3]);
+}
+
+// Redraw the live groups of a type in the scene showing (just the colon,
+// for the countdown's blink).
+static void invalidate_live(uint8_t type, bool colon_only) {
+    for (int i = 1; cur && i < cur->group_count; i++) {
+        const SceneGroup* g = &cur->groups[i];
+        if (g->type != type || !group_shows(i)) continue;
+        if (colon_only) {
+            int xs[3], xc;
+            digits_layout(g->box[0], g->p[0], g->p[2], xs, &xc);
+            invalidate(base, xc, g->box[1], g->p[2], g->box[3]);
+        } else {
+            invalidate_box(g, 0);
+        }
+    }
 }
 
 // Step every animated group to `now`; invalidate what moved or blinked.
@@ -161,6 +199,86 @@ static void draw_hands(lv_layer_t* layer, const lv_area_t* clip, lv_draw_fill_ds
     }
 }
 
+static void fill_at(lv_layer_t* layer, const lv_area_t* clip, lv_draw_fill_dsc_t* d,
+                    int x, int y, int w, int h) {
+    lv_area_t a;
+    if (to_area(x, y, w, h, &a)) fill(layer, clip, d, &a);
+}
+
+// The LED countdown: lit segments for H:MM ("-:--" when unknown) and the
+// colon, which blinks while it counts.
+static void draw_digits(lv_layer_t* layer, const lv_area_t* clip, lv_draw_fill_dsc_t* d,
+                        const SceneGroup* g) {
+    const int x = g->box[0], y = g->box[1];
+    const int dw = g->p[0], dh = g->p[1], t = g->p[2], mid = (dh - t) / 2;
+    int xs[3], xc;
+    digits_layout(x, dw, t, xs, &xc);
+    uint8_t gl[3] = { SEG_DASH, SEG_DASH, SEG_DASH };
+    if (countdown >= 0) {
+        gl[0] = (uint8_t)LV_MIN(9, countdown / 60);
+        gl[1] = (uint8_t)(countdown % 60 / 10);
+        gl[2] = (uint8_t)(countdown % 10);
+    }
+    for (int k = 0; k < 3; k++) {
+        const uint8_t m = SEG7[gl[k]];
+        const int x0 = xs[k];
+        if (m & 0x01) fill_at(layer, clip, d, x0, y, dw, t);                       // a
+        if (m & 0x02) fill_at(layer, clip, d, x0 + dw - t, y, t, mid + t);         // b
+        if (m & 0x04) fill_at(layer, clip, d, x0 + dw - t, y + mid, t, dh - mid);  // c
+        if (m & 0x08) fill_at(layer, clip, d, x0, y + dh - t, dw, t);              // d
+        if (m & 0x10) fill_at(layer, clip, d, x0, y + mid, t, dh - mid);           // e
+        if (m & 0x20) fill_at(layer, clip, d, x0, y, t, mid + t);                  // f
+        if (m & 0x40) fill_at(layer, clip, d, x0, y + mid, dw, t);                 // g
+    }
+    if (countdown < 0 || colon_on) {
+        fill_at(layer, clip, d, xc, y + mid - t, t, t);
+        fill_at(layer, clip, d, xc, y + mid + t, t, t);
+    }
+}
+
+// The weekly burndown: a dashed "now" line, then per column up to now the
+// weekly usage left as a filled bar whose top cell is the line colour. A
+// column without data is a dither at the last known level in the no-data
+// colour (nothing before the first sample).
+static void draw_chart(lv_layer_t* layer, const lv_area_t* clip, lv_draw_fill_dsc_t* d,
+                       const SceneGroup* g, const uint32_t* pal, uint8_t line_c) {
+    if (!week || week_now < 0) return;
+    const int x = g->box[0], y = g->box[1], w = g->box[2], h = g->box[3];
+    const int cell = (g->p[0] & 0xFF) ? (g->p[0] & 0xFF) : 2;
+    const int ghost = ((uint16_t)g->p[0]) >> 8;    // no-data colour + 1, 0 = none
+    const int cols = w / cell, rows = h / cell;
+    if (cols <= 0 || rows <= 0) return;
+    const int nc = LV_MIN(cols - 1, week_now * cols / BURNDOWN_SLOTS);
+    d->color = lv_color_hex(pal[(uint8_t)g->p[2]]);
+    for (int r = 0; r < rows; r += 2) fill_at(layer, clip, d, x + nc * cell, y + r * cell, cell, cell);
+    const lv_color_t area = lv_color_hex(pal[(uint8_t)g->p[1]]);
+    const lv_color_t line = lv_color_hex(pal[line_c]);
+    int last_hc = 0;                          // the last known height, 0 = none yet
+    for (int c = 0; c <= nc; c++) {
+        const int used = burndown_column(week, c, cols, week_now);
+        if (used < 0) {
+            if (ghost && last_hc > 0) {       // carried forward, dithered
+                d->color = lv_color_hex(pal[ghost - 1]);
+                for (int r = rows - last_hc; r < rows; r += 2)
+                    fill_at(layer, clip, d, x + c * cell, y + r * cell, cell, cell);
+            }
+            continue;
+        }
+        const int left = 100 - used;
+        int hc = (left * rows + 50) / 100;
+        if (left > 0 && hc == 0) hc = 1;      // a sliver left still shows
+        last_hc = hc;
+        if (hc <= 0) continue;
+        const int top = y + h - hc * cell;
+        d->color = line;
+        fill_at(layer, clip, d, x + c * cell, top, cell, cell);
+        if (hc > 1) {
+            d->color = area;
+            fill_at(layer, clip, d, x + c * cell, top + cell, cell, (hc - 1) * cell);
+        }
+    }
+}
+
 static void draw_cb(lv_event_t* e) {
     if (!cur) return;
     lv_layer_t* layer = lv_event_get_layer(e);
@@ -181,6 +299,15 @@ static void draw_cb(lv_event_t* e) {
             if (g->type == SG_CLOCK) {
                 d.color = lv_color_hex(pal[r.c]);
                 draw_hands(layer, &clip, &d, g);
+                continue;
+            }
+            if (g->type == SG_DIGITS) {
+                d.color = lv_color_hex(pal[r.c]);
+                draw_digits(layer, &clip, &d, g);
+                continue;
+            }
+            if (g->type == SG_CHART) {
+                draw_chart(layer, &clip, &d, g, pal, r.c);
                 continue;
             }
         }
@@ -401,10 +528,31 @@ void scene_tick(uint32_t now, int minute_of_day) {
         for (int i = 1; cur && i < cur->group_count; i++)
             if (cur->groups[i].type == SG_CLOCK && group_shows(i)) invalidate_box(&cur->groups[i], 0);
     }
+    const bool colon = (now / COLON_MS) % 2 == 0;
+    if (colon != colon_on) {     // only the colon's two dots redraw
+        colon_on = colon;
+        if (countdown >= 0) invalidate_live(SG_DIGITS, true);
+    }
     wipe_tick(now);
     if (now - anim_at >= ANIM_MS) {
         anim_at = now;
         animate(now, wipe != W_HOLD);
+    }
+}
+
+void scene_set_live(int countdown_mins, const Burndown* wk, int now_slot) {
+    if (countdown_mins < 0) countdown_mins = -1;
+    if (countdown_mins != countdown) {
+        countdown = countdown_mins;
+        invalidate_live(SG_DIGITS, false);
+    }
+    if (!wk || now_slot < 0 || now_slot >= BURNDOWN_SLOTS) now_slot = -1;
+    const uint16_t rev = wk ? wk->rev : 0;
+    if (wk != week || now_slot != week_now || rev != week_rev) {
+        week = wk;
+        week_now = now_slot;
+        week_rev = rev;
+        invalidate_live(SG_CHART, false);
     }
 }
 

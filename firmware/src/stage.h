@@ -2,6 +2,8 @@
 #include <stdbool.h>
 #include <lvgl.h>
 
+struct Burndown;
+
 // The Clawd page (pages.h): Clawd alone on a landscape panel, large, playing.
 // He walks or scuttles about, waves, dances, jumps and plays with his ball or
 // skateboard, all from the official animations; while Claude is working he
@@ -34,6 +36,10 @@ struct StageCues {
     const char* alert_text;   // its message
     bool        angry;        // usage burning (pages.cpp decides)
     int         minute_of_day; // local wall-clock minute 0..1439, -1 unknown
+    // The office wall (scene_set_live): the LED countdown and the burndown poster.
+    int             session_left_mins; // until the 5-hour window resets, -1 unknown / none
+    const Burndown* week;              // this week's history (burndown.h), NULL = none
+    int             week_now_slot;     // the hour slot it is now, -1 unknown
 };
 
 // Build the sprite on `scr` (w x h px), already in the scene `cues` call for

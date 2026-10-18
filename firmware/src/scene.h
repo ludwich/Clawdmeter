@@ -13,7 +13,8 @@
 // draws the current scene in LV_EVENT_DRAW_MAIN: no LVGL object per shape.
 // The scene re-colours by the local time of day (day, dusk 06-08 and 18-21,
 // night 21-06), and its animations (drifting clouds, cycling frames, the wall
-// clock) invalidate only the boxes that changed, at most ~10 Hz each.
+// clock, the LED countdown's colon) invalidate only the boxes that changed,
+// at most ~10 Hz each.
 //
 // Switching scenes can run a venetian-blind wipe: slats close over the
 // screen (on top of Clawd too), the scene swaps while it's covered, and the
@@ -39,6 +40,13 @@ bool    scene_transition_covered(void);  // ...and has the screen covered
 // Per loop while open. minute_of_day: local wall-clock minute 0..1439, or
 // -1 when unknown (day colours, the clock at 10:10).
 void    scene_tick(uint32_t now, int minute_of_day);
+// The office's live wall: the LED countdown shows `countdown_mins` left in
+// the 5-hour window as H:MM (-1 = unknown or no window: "-:--"); the poster
+// charts `week` (burndown.h; NULL = nothing) up to hour slot `week_now`
+// (-1 = unknown: nothing drawn). Cheap to call per loop: only what changed
+// is redrawn.
+struct Burndown;
+void    scene_set_live(int countdown_mins, const Burndown* week, int week_now);
 // The office desk: Clawd's body-left x (px) when he sits at his laptop.
 int     scene_anchor_desk_x(void);
 // An anchor of the scene showing, in px. False when it has none.

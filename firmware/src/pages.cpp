@@ -5,9 +5,11 @@
 #include "theme.h"
 #include "clawd_director.h"
 #include "usage_rate.h"
+#include "burndown.h"
 #include "hal/board_caps.h"
 #include "hal/display_hal.h"
 #include <Arduino.h>
+#include <Preferences.h>
 #include <lvgl.h>
 #include <stdio.h>
 
@@ -25,6 +27,13 @@ static Page      current = PAGE_METERS;
 static lv_obj_t* clawd_scr = NULL;
 static lv_obj_t* usage_scr = NULL;
 static int       land_w = 0, land_h = 0;   // the landscape resolution
+// The office wall's live data: the countdowns run on from the last good
+// payload, and this week's burndown history (burndown.h), kept in NVS.
+static int       sr_at = -1, wr_at = -1;    // `sr` / `wr` in the last ok payload
+static bool      spend_capped = false;      // Enterprise: no 5-hour or weekly window
+static uint32_t  ok_ms = 0;                 // millis() when it arrived
+static Burndown  week;
+static bool      week_live = false;         // a payload has placed it this boot
 
 // ─── Usage page ──────────────────────────────────────────────────────────────
 // Two rows, each: label and reset line on the left, the big percentage on
@@ -116,6 +125,37 @@ static void draw_usage(void) {
     lv_obj_set_style_opa(usage_box, ui_meters_live() ? LV_OPA_COVER : LV_OPA_40, 0);
 }
 
+// ─── This week's burndown, in NVS ────────────────────────────────────────────
+// Its own namespace: 168 bytes of history plus the window's reset minute,
+// written at most once an hour (burndown_sample says when).
+#define WEEK_NS "clawdweek"
+
+static void week_load(void) {
+    Preferences prefs;
+    prefs.begin(WEEK_NS, false);
+    const size_t n = prefs.getBytes("used", week.used, sizeof(week.used));
+    week.reset_min = prefs.getInt("reset", 0);
+    prefs.end();
+    if (n != sizeof(week.used)) week.reset_min = 0;    // nothing saved yet: start empty
+    burndown_sanitize(&week);
+}
+
+static void week_save(void) {
+    Preferences prefs;
+    prefs.begin(WEEK_NS, false);
+    prefs.putBytes("used", week.used, sizeof(week.used));
+    prefs.putInt("reset", week.reset_min);
+    prefs.end();
+}
+
+// Minutes left of a countdown read `base` minutes at the last ok payload; -1
+// when unknown or run out (the window is over until the next payload).
+static int left_now(int base) {
+    if (base < 0) return -1;
+    const int v = base - (int)((millis() - ok_ms) / 60000UL);
+    return v < 0 ? -1 : v;
+}
+
 // ─── Pages ───────────────────────────────────────────────────────────────────
 void pages_init(void) {
     const BoardCaps& caps = board_caps();
@@ -123,6 +163,7 @@ void pages_init(void) {
     if (!enabled) return;
     land_w = caps.width > caps.height ? caps.width : caps.height;
     land_h = caps.width > caps.height ? caps.height : caps.width;
+    week_load();
     clawd_scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(clawd_scr, THEME_BG, 0);
     lv_obj_set_style_bg_opa(clawd_scr, LV_OPA_COVER, 0);
@@ -183,6 +224,18 @@ void pages_update(const UsageData* d) {
     if (d->valid && d->ok) {       // like the meters' title clock (ui.cpp)
         clock_epoch = d->clock_epoch;
         clock_ms = millis();
+        // Replays carry the app's own run-down countdowns, so they count here.
+        sr_at = d->session_reset_mins;
+        wr_at = d->weekly_reset_mins;
+        spend_capped = d->enterprise;
+        ok_ms = clock_ms;
+    }
+    // Only real samples go in the history (no data is never a value).
+    if (enabled && d->valid && d->ok && !d->replay && !d->enterprise) {
+        const int32_t now_min = d->clock_epoch > 0 ? (int32_t)(d->clock_epoch / 60) : 0;
+        const int f = burndown_sample(&week, now_min, d->weekly_reset_mins, d->weekly_pct);
+        if (now_min > 0 && d->weekly_reset_mins >= 0) week_live = true;
+        if (f & BURNDOWN_SAVE) week_save();
     }
     if (current == PAGE_USAGE) draw_usage();
 }
@@ -218,6 +271,9 @@ static void clawd_cues(StageCues* c) {
     c->alert_text = director_alert_active() ? director_alert_message() : "Claude needs you";
     c->angry = usage_angry() || (debug_mood & 1);
     c->minute_of_day = minute_of_day();
+    c->session_left_mins = spend_capped ? -1 : left_now(sr_at);
+    c->week = &week;
+    c->week_now_slot = (spend_capped || !week_live) ? -1 : burndown_slot_of(left_now(wr_at));
 }
 
 void pages_tick(void) {

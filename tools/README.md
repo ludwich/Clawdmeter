@@ -46,6 +46,7 @@ python tools/scenes/scenekit.py build                       # → firmware/src/s
 python tools/scenes/scenekit.py preview office --tod night --out /tmp/office.png
 python tools/scenes/scenekit.py preview outdoor --t 20000 --clawd idle --x 40 --out /tmp/out.png
 python tools/scenes/scenekit.py preview office --gif 3 --out /tmp/office.gif
+python tools/scenes/scenekit.py preview office --sr -1 --week empty   # unknown window, no history
 python tools/scenes/scenekit.py preview all                 # every scene × time of day + sheet.png
 ```
 
@@ -57,7 +58,12 @@ renders the previews (320×172 plus a ×3 copy, colours through RGB565), with
 Clawd's official frames composited exactly where `stage.cpp` puts him: the
 idle pose, or the laptop act's typing frame at the `DESK` anchor.
 `preview all` writes to `../scene-previews/` beside the checkout unless
-`--outdir` says otherwise. Rebuild the firmware after `build`.
+`--outdir` says otherwise. The office's live wall gets fake data:
+`--sr 161` (minutes left in the 5-hour window, `-1` = unknown, `-:--`),
+`--week synthetic|empty|even|none` (a made-up week with a gap where the
+device was off, no samples, an even burn, or no payload yet) and
+`--week-now 110` (the current hour slot, 0..167). Rebuild the firmware after
+`build`.
 
 The canvas is 320×172 px (`W`, `H`); his feet are on `FLOOR_Y` = 162 and a
 cell of his art is 5 px. Shapes are flat rectangles drawn in order (later on
@@ -77,6 +83,15 @@ top), each naming a palette index:
   frame (an empty frame = blink off); or `s.frames_of([draw_a, draw_b], 400)`.
   Periods ≥ 100 ms.
 - `s.clock(cx, cy, r, face_c, hand_c, rim_c)`: hands at the real local time.
+- `s.digits(x, y, lit_c, ghost_c, dw=6, dh=10, t=2)`: an LED countdown,
+  H:MM in 7-segment digits (dw x dh, strokes t px) showing the time left in
+  the 5-hour window, `-:--` when unknown; the colon blinks each second.
+  `ghost_c` draws the unlit 8:88 under it.
+- `s.chart(x, y, w, h, line_c, area_c, now_c, cell=2)`: the live 7-day
+  burndown in a plot area: one `cell`-px column per 168 / (w / cell) hours,
+  filled up to the weekly usage left (`area_c`, the top cell `line_c`),
+  columns without data left empty, and a dashed now line. Axes, ticks and the
+  ideal pace line are plain shapes around it.
 - `s.anchor("DESK", x)` (office: Clawd's body-left at the laptop),
   `s.anchor("SIGN", x, y, w, h)` (an area for live text).
 
