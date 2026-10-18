@@ -92,6 +92,7 @@ passed. Beat changes always print; every step prints too after
 | Beat | Trigger | Steps |
 |---|---|---|
 | `home` | default | Corner autonomy on: jittered idle gaps (±40 % of 10 / 7 / 5 / 3.5 s by mood), mood-picked acts, never the same act twice running, and lurk trips (PSRAM). Also checks the gates below. |
+| `home`, working | Claude is working (`clawd_working`: a prompt with no Stop yet, with the prompt or the last tool activity under 10 min ago, or activity 1+ once a minute has passed since the last Stop) | His idle acts and lurk trips give way to the laptop: he opens it, types in its loop for as long as the work goes on, then closes it and sits back down; 400 ms later he opens it again if Claude is still at it. Reactions (noticing, the long-turn wave, joy) and every other beat still cut in; one that waits for him (a show) gets him once he has closed the laptop, since he stops typing when his autonomy goes off. Needs idle acts on (liveliness 2+). |
 | `corner` | notice, wave, joy, or after a transition | Waits for the commanded corner act or walk to finish, then `home`. |
 | `show` | `a == 3` held for 5 min; at most one per 15 min; hooks seen; meters live | Points at the bar (or, if he's out on a lurk trip, heads straight out), walks off left at 1.5×, walks back on full size at 1.5×, one scene (loop held 16 s, so about 20 s), waves, walks off left, and the corner Clawd walks back in to his seat. Without the performer (no PSRAM): points, then dances twice (jumps for joy twice when usage is Heavy) and waves, all in his seat. |
 | `screensaver` | 10 min with no engagement; needs hooks seen or a window that hasn't started; meters live | Walks off through the nearest edge (a lurk trip finishes its peek first), face rises and rests (blinks every 2–6 s, about one in five a double, glances where the far eye travels 1.5×). Every 3–5 min, a calm dip: the face drops onto the meters, he walks on, plays one calm scene (magnifier or walking, alternating) and walks off, then the face rises and he rests again. Without the performer the corner Clawd walks back to his seat, sits for the scene's length and walks off again. |
@@ -341,7 +342,8 @@ a board capability, with no NVS override, desktop setting, or serial toggle.
 ## Boards without PSRAM (C6)
 
 - Corner Clawd: animated. Its buffer, sized for the largest corner act
-  (jumping happy, 28×30 cells × 3 px, about 23 KB), falls back to internal RAM.
+  (jumping happy, 28×30 cells × 3 px, about 23 KB; sized by area, so the
+  wider but shorter laptop fits), falls back to internal RAM.
 - Face: plain LVGL objects, the same as on S3.
 - No performer (its buffer is about 690 KB): a show is corner acts (pointing,
   dancing or jumping happy twice, a wave) and a calm dip is the corner Clawd

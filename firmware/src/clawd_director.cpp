@@ -658,6 +658,7 @@ void director_tick(void) {
     show_gate_update(&show_gate, now, activity, &clawd_tuning());
     // Tool calls flowing (PostToolUse) are hook events too: you're working.
     if (activity > 0) last_engagement = now;
+    mascot_set_working(clawd_working(&turn, now, activity));
     face_tick();
 
     switch (beat) {

@@ -78,8 +78,13 @@ static const uint16_t HURRY_PCT = 250;        // hurrying home from a lurk trip
 static const char* const TALL_FALLBACK = "dancing";
 // Everything the corner buffer must fit.
 static const char* const CORNER_ANIMS[] = {
-    "walking", "waving", "pointing", "dancing", "jumping happy",
+    "walking", "waving", "pointing", "dancing", "jumping happy", "laptop",
 };
+// While Claude works he sits at the laptop, with only this short pause
+// between one session at it and the next.
+static const uint16_t WORK_GAP_MS = 400;
+static bool           working = false;
+static const ClawdAnim* laptop_anim = NULL;
 
 // ─── Rendering ───────────────────────────────────────────────────────────────
 // One frame into a planar RGB565A8 image (alpha 0 outside the art), widget
@@ -224,16 +229,17 @@ lv_obj_t* mascot_create(lv_obj_t* parent, int sx, int feet, int c) {
     round_panel = caps.round_panel;
     walk_anim = clawd_anim("walking");
     if (!walk_anim) return NULL;
+    laptop_anim = clawd_anim("laptop");
     clawd_rng_seed(&rng, millis() ^ 0xC1A3D);
 
-    int mw = 0, mh = 0;
+    // Sized for the largest act by area: each frame is drawn at its own size.
+    size_t bytes = 0;
     for (const char* n : CORNER_ANIMS) {
         const ClawdAnim* a = clawd_anim(n);
         if (!a) continue;
-        if (a->w > mw) mw = a->w;
-        if (a->h > mh) mh = a->h;
+        const size_t b = (size_t)(a->w * c) * (a->h * c) * 3;
+        if (b > bytes) bytes = b;
     }
-    const size_t bytes = (size_t)(mw * c) * (mh * c) * 3;
 
     const int mind = caps.width < caps.height ? caps.width : caps.height;
     lurk_cell = mind / SPLASH_GRID;
@@ -287,6 +293,8 @@ bool mascot_in_attention(void) {
     return attn || mode == M_BIG_IN || mode == M_BIG_ACT || mode == M_BIG_OUT ||
            mode == M_HELD || mode == M_SEAT_ATTN || (mode == M_WALK && after == AFTER_BIG);
 }
+
+void mascot_set_working(bool on) { working = on; }
 
 void mascot_autonomy(bool on) {
     autonomy = on;
@@ -451,7 +459,18 @@ void mascot_attention(bool on, bool to_seat) {
 
 // ─── Tick ────────────────────────────────────────────────────────────────────
 static void seated_tick(uint32_t now) {
-    if (!autonomy || minimal || now - seated_since < idle_gap) return;
+    if (!autonomy || minimal) return;
+    if (working && laptop_anim && feet_y - laptop_anim->h * cell >= 0) {
+        if (now - seated_since < WORK_GAP_MS) return;
+        start_frames(laptop_anim);
+        speed = 100;
+        act_left = 1;
+        act_auto = true;
+        mode = M_ACT;
+        draw_corner();
+        return;
+    }
+    if (now - seated_since < idle_gap) return;
     int g = usage_rate_group();
     if (g < 0 || g > 3) g = 0;
     const int pick = clawd_pick_no_repeat(ACTS_BY_RATE[g], 4, last_act, &rng);
@@ -490,6 +509,10 @@ void mascot_tick(void) {
     const bool walking = mode == M_WALK || mode == M_BIG_IN || mode == M_BIG_OUT;
     uint16_t next = frame + 1;
     if (walking && frame == a->loop_end) next = a->loop_start;   // hold the gait loop
+    // Keep typing while the work goes on; once it stops he plays out the
+    // rest (closing the laptop) and sits back down.
+    if (mode == M_ACT && act_auto && working && autonomy && a == laptop_anim && frame == a->loop_end)
+        next = a->loop_start;
 
     if (next >= a->frame_count) {
         if (mode == M_BIG_ACT || mode == M_SEAT_ATTN) {   // wave, point, wave, ...

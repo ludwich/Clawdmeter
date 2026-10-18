@@ -27,6 +27,9 @@ bool mascot_free(void);              // seated, or in an idle act of his own (a 
 bool mascot_out(void);               // out of his seat on his own: lurk trip, walk, away
 
 void mascot_autonomy(bool on);       // idle acts + lurk trips while seated
+// Claude is working: with autonomy on, his idle acts give way to the laptop
+// (opened, typed on in a loop, closed again once the work stops).
+void mascot_set_working(bool on);
 // Play `anim` in the seat `times` times (noticing, a wave, jumping happy).
 // Interrupts an idle act; refused (false) while he's walking or away. An act
 // too tall for the headroom above the seat plays a shorter official act.
