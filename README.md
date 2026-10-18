@@ -4,6 +4,62 @@
 
 Clawdmeter shows your Claude Code usage limits on an ESP32 development board on your desk. Clawd lives on the device. He reacts to prompts, cheers you on, and alerts you when a session needs your attention.
 
+## This fork (ludwich/Clawdmeter)
+
+Additions on top of upstream, built for a Waveshare ESP32-C6-LCD-1.47. Nothing here is in an upstream PR yet.
+
+**New board: Waveshare ESP32-C6-LCD-1.47 (non-touch)**, env `waveshare_lcd_147_c6_nontouch`.
+- ST7789 172×320 over SPI, ESP32-C6 with no PSRAM; BOOT is the only button.
+- [Buy link](https://www.waveshare.com/esp32-c6-lcd-1.47.htm?&aff_id=149786).
+- Added to the app catalog with its own board art.
+- Tested on hardware (ESP32-C6FH8 rev v0.2).
+
+**Clawd works on his laptop while Claude works.**
+- The corner Clawd plays the official laptop act while a turn is open, or tools ran in the last minute.
+- Long agentic turns stay "working" as long as tools keep running.
+
+**Hook events reach Clawd again.**
+- Desktop app v2.2.x marks every hook-event write `rp:1`, and the firmware dropped events on `rp`, so prompts and stops never fired.
+- The firmware now fires on any new `es`; `rp` only keeps replayed usage numbers out of the rate math.
+
+**Landscape pages** on boards that can rotate the panel. Opt-in per board via `display_hal_set_landscape()`; today only the LCD-1.47.
+- **BOOT:** one press goes to the next page; a double press cycles brightness.
+- **Pages:** meters → Clawd page → large usage bars.
+
+**The Clawd page: office or outside.**
+- **Office** while Claude works: Clawd at his laptop.
+- **Outside** while he plays: walking, skating, ball games.
+- **Transition:** blinds close and open between the two scenes.
+- **Time of day:** the scenery re-colours for day, dusk and night (from the app's clock).
+- **Moods:** a yelling speech bubble on an alert; an anger mark and steam when usage burns fast.
+
+![Office (top) and outside (bottom) at day, dusk and night (simulated preview, scenekit)](docs/images/fork-scenes.png)
+
+**Live office wall.**
+- **LED countdown:** time left until the next 5-hour window (H:MM).
+- **Weekly usage poster:**
+  - % of the week used, coloured by pace.
+  - A verdict: `-13 UNDER`, `ON PACE`, `+3 OVER`, or `EMPTY IN 2D` when your current rate runs out before the reset.
+  - A burn-up chart of usage against the even-pace line, with a projection.
+  - The device records hourly samples in NVS, so the curve fills in over the week.
+
+![Weekly poster: under pace, empty in 2 days, empty in 11 hours, no data (simulated preview, x5)](docs/images/fork-weekly-poster.png)
+
+Scenery is pixel art authored in Python (`tools/scenes/`). `scenekit.py` generates const C tables (flash only, a few hundred bytes of RAM) and preview PNGs from the same data; see `tools/README.md`.
+
+**Serial QA on the device:**
+
+| Command | What it does |
+| --- | --- |
+| `page <n>` | Show page `n`: 0 meters, 1 Clawd, 2 usage |
+| `work 1\|0\|-1` | Force office (1) or outside (0); `-1` = the real state |
+| `tod <minute>` | Force the time of day, e.g. `tod 1380` for night; `-1` = the real clock |
+| `mood <bits>` | Force moods: 1 angry, 2 yelling, 0 = the real cues |
+
+**Docs:**
+- `docs/clawd-director.md`: the Pages section.
+- `docs/porting/hal-contract.md` and `capability-flags.md`: landscape pages are opt-in per board.
+
 ## Supported boards
 
 ### Flagship
