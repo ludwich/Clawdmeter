@@ -363,7 +363,7 @@ class Engine:
                 self._send()
             self.es += 1
             self.state.update(e=kind, es=self.es)
-            self._send()
+            self._send({"rp": 1})      # the app marks hook-event writes rp, too
             return {"es": self.es}
 
     def sessions(self, n=1):
