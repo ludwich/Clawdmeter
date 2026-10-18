@@ -484,8 +484,9 @@ a minute passes, and a time-of-day change once.
 QA on the serial console: `page 1` (the Clawd page), `work 1` / `work 0`
 (force Claude working or not; `work -1` = the real cue), `tod <minute>` (the
 page's local time, e.g. `tod 1380` for night; `tod -1` = the real clock),
-`mood <bits>` (1 angry, 2 yelling, 0 = real). C6 has no `screenshot`, so
-check by eye. Scene previews with Clawd placed exactly as on the device:
+`mood <bits>` (1 angry, 2 yelling, 0 = real). Capture the result with the
+`capturing-device-screenshots` skill, e.g. `screenshot.py out.png --cmd
+"page 1" --cmd "work 0" --scale 3` (C6 streams strips, no PSRAM needed). Scene previews with Clawd placed exactly as on the device:
 `python tools/scenes/scenekit.py preview all` (the live wall with fake data:
 `--sr`, `--w`, `--wr`, `--week`; `tools/README.md`).
 

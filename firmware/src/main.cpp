@@ -50,9 +50,20 @@ static uint16_t* buf2 = nullptr;
 
 static uint32_t my_tick(void) { return millis(); }
 
+// Set while the strip-streaming `screenshot` fallback forces a full redraw:
+// each flushed strip is also copied out over Serial (send_screenshot()).
+static bool shot_streaming = false;
+
 static void my_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     int32_t w = area->x2 - area->x1 + 1;
     int32_t h = area->y2 - area->y1 + 1;
+    if (shot_streaming) {
+        // LVGL's native little-endian RGB565, before the panel driver sees it.
+        Serial.printf("SCREENSHOT_STRIP %ld %ld %ld %ld\n",
+                      (long)area->x1, (long)area->y1, (long)w, (long)h);
+        Serial.write(px_map, (size_t)w * (size_t)h * 2);
+        Serial.println();
+    }
     display_hal_draw_bitmap(area->x1, area->y1, w, h, (uint16_t*)px_map);
     lv_display_flush_ready(disp);
 }
@@ -142,11 +153,31 @@ static void clear_pairing(const char* why) {
 static char cmd_buf[CMD_BUF_SIZE];
 static int cmd_pos = 0;
 
+// Screenshot without a frame buffer, for boards without PSRAM (a full RGB565
+// frame doesn't fit in internal SRAM, e.g. 480×480×2 = 460 KB): invalidate
+// the whole display and redraw it now, and my_flush_cb streams every strip as
+// `SCREENSHOT_STRIP x y w h` + w*h*2 raw bytes. No extra RAM: the strips are
+// LVGL's own draw buffers. Sized to the current resolution, so the landscape
+// pages come out landscape.
+[[maybe_unused]] static void send_screenshot_strips() {
+    lv_display_t* disp = lv_display_get_default();
+    const int32_t w = lv_display_get_horizontal_resolution(disp);
+    const int32_t h = lv_display_get_vertical_resolution(disp);
+    Serial.printf("SCREENSHOT_START %ld %ld strips\n", (long)w, (long)h);
+    Serial.flush();
+    lv_obj_invalidate(lv_screen_active());
+    lv_obj_invalidate(lv_layer_top());
+    lv_obj_invalidate(lv_layer_sys());   // screens span the whole display
+    shot_streaming = true;
+    lv_refr_now(disp);
+    shot_streaming = false;
+    Serial.flush();
+    Serial.println("SCREENSHOT_END");
+}
+
 static void send_screenshot() {
 #ifndef BOARD_HAS_PSRAM
-    // A full RGB565 framebuffer doesn't fit in internal SRAM on PSRAM-free
-    // boards (e.g. 480×480×2 = 460 KB). Capture is unsupported there.
-    Serial.println("SCREENSHOT_UNSUPPORTED");
+    send_screenshot_strips();
     return;
 #else
     const uint32_t w = board_caps().width;

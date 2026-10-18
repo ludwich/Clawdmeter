@@ -1,6 +1,6 @@
 ---
 name: verifying-firmware-ui
-description: Checks firmware UI and Clawd behaviour changes visually - the simulator grid (every panel at once, scripted, deterministic), single-sim screenshots (SIM_SHOTS, SIM_CMDS, SIM_TAPS), director walkthroughs, then `clawd <beat>` + `screenshot` on a connected board, with the C6 no-screenshot limit. Use after any change to the meters, Clawd, the face, layouts or LVGL drawing, when asked to screenshot the device or simulator, or before opening a firmware UI PR.
+description: Checks firmware UI and Clawd behaviour changes visually - the simulator grid (every panel at once, scripted, deterministic), single-sim screenshots (SIM_SHOTS, SIM_CMDS, SIM_TAPS), director walkthroughs, then `clawd <beat>` + `screenshot` on a connected board (C6 included, via strip streaming). Use after any change to the meters, Clawd, the face, layouts or LVGL drawing, when asked to screenshot the device or simulator, or before opening a firmware UI PR.
 ---
 
 # Verifying firmware UI
@@ -122,9 +122,10 @@ each UI iteration:
 
 There's no need to edit the boot screen in `main.cpp` to reach a state.
 
-**C6 boards can't be captured** (no PSRAM for the snapshot). Verify C6
-changes in the sim at 480×480 / 368×448 and say in the PR that the C6 panel
-needs eyeballing on hardware.
+**Boards without PSRAM** (the C6 boards, the classic-ESP32 CYDs) capture
+too: the firmware redraws once and streams the strips, and the script
+assembles them. The capture follows the current resolution, so the landscape
+pages come out landscape.
 
 ## Reporting
 

@@ -51,9 +51,11 @@ pins and hardware gotchas, which loads when you work in that folder.
   there.
 
 **C6 boards have no PSRAM.** Shared code gates on `BOARD_HAS_PSRAM` (absent on
-C6) and allocates LVGL and animation buffers with `MALLOC_CAP_INTERNAL`. The
-`screenshot` serial command is compiled out (`LV_USE_SNAPSHOT=0`), so C6 UI
-changes must be eyeballed on hardware.
+C6) and allocates LVGL and animation buffers with `MALLOC_CAP_INTERNAL`.
+Without PSRAM there is no snapshot (`LV_USE_SNAPSHOT=0`), so `screenshot`
+forces a full redraw and streams each flushed strip instead
+(`send_screenshot_strips()` in `main.cpp`); `screenshot.py` in the
+`capturing-device-screenshots` skill assembles it into a PNG.
 
 UI changes: check them yourself with the `verifying-firmware-ui` skill. The
 simulator grid (`tools/simgrid/`, `docs/sim-grid.md`) shows every panel at

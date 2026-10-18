@@ -95,7 +95,7 @@ function in your board folder only when it has something to report.
 
 | Command                   | Reply |
 |---------------------------|-------|
-| `screenshot`              | `SCREENSHOT_START w h bytes`, raw RGB565, `SCREENSHOT_END` (`SCREENSHOT_UNSUPPORTED` without PSRAM) |
+| `screenshot`              | PSRAM: `SCREENSHOT_START w h bytes`, raw RGB565, `SCREENSHOT_END`. No PSRAM: `SCREENSHOT_START w h strips`, then per flushed strip `SCREENSHOT_STRIP x y w h` + w·h·2 raw RGB565 (little-endian), then `SCREENSHOT_END` |
 | `chime` (or `buzz`)       | plays the ding (no reply) |
 | `chime <gain> [volume]`   | tunes a board's speaker until reboot (gain 0..1, ES8311 volume 0..100) and plays the ding. Replies `{"chime":{"gain":0.70,"volume":77}}`. |
 | `unpair`                  | clears every BLE bond and re-advertises. Replies `{"unpair":true}`. |
