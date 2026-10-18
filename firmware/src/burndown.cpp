@@ -1,4 +1,5 @@
 #include "burndown.h"
+#include <stdio.h>
 #include <string.h>
 
 void burndown_clear(Burndown* b) {
@@ -63,12 +64,109 @@ void burndown_sanitize(Burndown* b) {
         if (b->used[s] > 100 && b->used[s] != BURNDOWN_EMPTY) b->used[s] = BURNDOWN_EMPTY;
 }
 
-int burndown_column(const Burndown* b, int col, int cols, int now_slot) {
-    if (!b || cols <= 0 || col < 0 || col >= cols || now_slot < 0) return -1;
-    const int s0 = col * BURNDOWN_SLOTS / cols;
-    int s1 = (col + 1) * BURNDOWN_SLOTS / cols;  // exclusive
-    if (s1 > now_slot + 1) s1 = now_slot + 1;
-    for (int s = s1 - 1; s >= s0; s--)
-        if (b->used[s] != BURNDOWN_EMPTY) return b->used[s];
-    return -1;
+// a / b rounded half away from zero (b > 0).
+static int32_t div_round(int32_t a, int32_t b) {
+    return a >= 0 ? (a + b / 2) / b : -((-a + b / 2) / b);
+}
+
+int burndown_elapsed(int wr) {
+    if (wr < 0) return -1;
+    const int e = BURNDOWN_WEEK_MINS - wr;
+    return e < 0 ? 0 : e;                         // skew past the window: its start
+}
+
+void burndown_pace(WeekPace* p, int used, int wr) {
+    p->level = WEEK_UNKNOWN;
+    p->used = -1;
+    p->elapsed = -1;
+    p->delta = 0;
+    p->out_in = -1;
+    if (used < 0 || wr < 0) return;
+    if (used > 100) used = 100;
+    const int32_t e = burndown_elapsed(wr);
+    p->used = (int16_t)used;
+    p->elapsed = (int16_t)e;
+    // used - 100 * e / WEEK, in 1/WEEK_MINS of a point.
+    const int32_t ahead = (int32_t)used * BURNDOWN_WEEK_MINS - 100 * e;
+    p->delta = (int16_t)div_round(ahead, BURNDOWN_WEEK_MINS);
+    if (used >= 100) {
+        p->level = WEEK_OUT;
+        p->out_in = 0;
+        return;
+    }
+    if (ahead <= (int32_t)BURNDOWN_GRACE_PCT * BURNDOWN_WEEK_MINS) {
+        p->level = used >= BURNDOWN_RED_PCT ? WEEK_OUT : WEEK_ON;
+        return;
+    }
+    p->level = WEEK_AHEAD;
+    // Ahead means the average rate reaches 100 % before the reset; it's
+    // projected once the window has run long enough to say.
+    if (e >= BURNDOWN_PROJECT_MINS) {
+        const int32_t t_out = e * 100 / used;     // used > 0 here
+        if (t_out < BURNDOWN_WEEK_MINS) {
+            p->out_in = (int16_t)(t_out - e);
+            if (BURNDOWN_WEEK_MINS - t_out >= BURNDOWN_OUT_MARGIN) p->level = WEEK_OUT;
+        }
+    }
+    if (used >= BURNDOWN_RED_PCT) p->level = WEEK_OUT;
+}
+
+void burndown_verdict(const WeekPace* p, char l1[8], char l2[8]) {
+    l1[0] = l2[0] = 0;
+    if (!p || p->level == WEEK_UNKNOWN) return;
+    if (p->out_in == 0) {
+        snprintf(l1, 8, "OUT");
+        snprintf(l2, 8, "NOW");
+    } else if (p->level == WEEK_OUT && p->out_in > 0) {
+        snprintf(l1, 8, "OUT");
+        const int m = p->out_in;
+        if (m >= 24 * 60)  snprintf(l2, 8, "%dD", m / (24 * 60));
+        else if (m >= 60)  snprintf(l2, 8, "%dH", m / 60);
+        else               snprintf(l2, 8, "<1H");
+    } else if (p->level == WEEK_AHEAD || p->delta > BURNDOWN_GRACE_PCT) {
+        snprintf(l1, 8, "+%d", p->delta);
+        snprintf(l2, 8, "AHEAD");
+    } else if (p->delta < -BURNDOWN_GRACE_PCT) {
+        snprintf(l1, 8, "%d", p->delta);
+        snprintf(l2, 8, "BEHIND");
+    } else {
+        snprintf(l1, 8, "ON");
+        snprintf(l2, 8, "PACE");
+    }
+}
+
+int burndown_used_at(const Burndown* b, const WeekPace* p, int t) {
+    if (!p || p->level == WEEK_UNKNOWN || t < 0 || t > p->elapsed) return -1;
+    const int e = p->elapsed;
+    if (t == e) return p->used;
+    // Recorded slots strictly before the current hour count, each at its
+    // half hour (when in the hour it was seen isn't kept).
+    int lim = e / 60;
+    if (lim > BURNDOWN_SLOTS) lim = BURNDOWN_SLOTS;
+    int t0 = 0, v0 = 0, t1 = e, v1 = p->used;
+    int k = t / 60;
+    if (k >= lim) k = lim - 1;
+    if (b) {
+        int j = k;
+        for (; j >= 0; j--) {
+            if (b->used[j] == BURNDOWN_EMPTY || j * 60 + 30 > t) continue;
+            t0 = j * 60 + 30;
+            v0 = b->used[j];
+            break;
+        }
+        for (int n = (j < 0 ? 0 : j + 1); n < lim; n++) {
+            if (b->used[n] == BURNDOWN_EMPTY || n * 60 + 30 <= t) continue;
+            t1 = n * 60 + 30;
+            v1 = b->used[n];
+            break;
+        }
+    }
+    if (t1 <= t0) return v1;
+    return v0 + (int)div_round((int32_t)(v1 - v0) * (t - t0), t1 - t0);
+}
+
+int burndown_projected_at(const WeekPace* p, int t) {
+    if (!p || p->level == WEEK_UNKNOWN || p->elapsed < BURNDOWN_PROJECT_MINS || t < p->elapsed) return -1;
+    const int32_t v = div_round((int32_t)p->used * t, p->elapsed);
+    return v > 100 ? 100 : (int)v;
 }

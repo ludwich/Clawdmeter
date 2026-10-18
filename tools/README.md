@@ -46,7 +46,8 @@ python tools/scenes/scenekit.py build                       # → firmware/src/s
 python tools/scenes/scenekit.py preview office --tod night --out /tmp/office.png
 python tools/scenes/scenekit.py preview outdoor --t 20000 --clawd idle --x 40 --out /tmp/out.png
 python tools/scenes/scenekit.py preview office --gif 3 --out /tmp/office.gif
-python tools/scenes/scenekit.py preview office --sr -1 --week empty   # unknown window, no history
+python tools/scenes/scenekit.py preview office --w 62 --wr 5000     # weekly poster: 62 % half way
+python tools/scenes/scenekit.py preview office --sr -1 --week none   # unknown windows: -:--, --%
 python tools/scenes/scenekit.py preview all                 # every scene × time of day + sheet.png
 ```
 
@@ -60,9 +61,12 @@ idle pose, or the laptop act's typing frame at the `DESK` anchor.
 `preview all` writes to `../scene-previews/` beside the checkout unless
 `--outdir` says otherwise. The office's live wall gets fake data:
 `--sr 161` (minutes left in the 5-hour window, `-1` = unknown, `-:--`),
-`--week synthetic|empty|even|none` (a made-up week with a gap where the
-device was off, no samples, an even burn, or no payload yet) and
-`--week-now 110` (the current hour slot, 0..167). Rebuild the firmware after
+`--w 34` (weekly % used now, `-1` = unknown or spend-capped, `--%`),
+`--wr 5600` (minutes to the weekly reset, `-1` = unknown) and
+`--week synthetic|empty|even|none` (the recorded history: a made-up week
+ending at `--w` with a gap where the device was off, no samples so a
+straight line from the start, an even burn, or no payload yet). The preview
+prints the pace level and verdict it drew. Rebuild the firmware after
 `build`.
 
 The canvas is 320×172 px (`W`, `H`); his feet are on `FLOOR_Y` = 162 and a
@@ -87,13 +91,17 @@ top), each naming a palette index:
   H:MM in 7-segment digits (dw x dh, strokes t px) showing the time left in
   the 5-hour window, `-:--` when unknown; the colon blinks each second.
   `ghost_c` draws the unlit 8:88 under it.
-- `s.chart(x, y, w, h, line_c, area_c, now_c, ghost_c=None, cell=2)`: the
-  live 7-day burndown in a plot area: one `cell`-px column per
-  168 / (w / cell) hours, filled up to the weekly usage left (`area_c`, the
-  top cell `line_c`), and a dashed now line. A column without data is empty
-  before the first sample (or without `ghost_c`); after it, a dither in
-  `ghost_c` carries the last known level forward. Axes, ticks and the ideal
-  pace line are plain shapes around it.
+- `s.week_number(x, y, w, ink_c, levels, scale=2)`: the weekly poster's
+  live text: the weekly % used right-aligned at `scale` (with a 1x `%`) in
+  the pace level's colour, `levels` = (on pace, ahead, out, unknown), and
+  the two-line verdict at the left in `ink_c` (`burndown_verdict`).
+- `s.week_chart(x, y, w, h, line_c, area_c, now_c, levels)`: the live
+  burn-up in a plot area, one px column per 1/w of the week, 0 % on the
+  bottom row and 100 % on the top: the % used so far (straight lines between
+  real points) as `line_c` over `area_c`, a dashed now marker in `now_c`, and
+  the average rate dotted on to the reset in the level colour, clipped at
+  100 % with a run-out mark. Axes, ticks and the even-pace dots are plain
+  shapes around it (`chart_row`, `chart_col_mid` place them on its grid).
 - `s.anchor("DESK", x)` (office: Clawd's body-left at the laptop),
   `s.anchor("SIGN", x, y, w, h)` (an area for live text).
 

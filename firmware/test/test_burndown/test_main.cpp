@@ -1,5 +1,6 @@
 // burndown: the office poster's 7-day history, slotted by hour of the weekly
-// window and cleared when the window resets.
+// window and cleared when the window resets; the pace, verdict, burn-up and
+// projection drawn from it.
 //   pio test -d firmware -e native -f test_burndown
 #include <unity.h>
 #include <string.h>
@@ -28,7 +29,6 @@ static void test_slot_of(void) {
 
 static void test_blank_is_empty(void) {
     for (int s = 0; s < BURNDOWN_SLOTS; s++) TEST_ASSERT_EQUAL_HEX8(BURNDOWN_EMPTY, b.used[s]);
-    TEST_ASSERT_EQUAL(-1, burndown_column(&b, 0, 21, 167));
 }
 
 static void test_records_and_saves_once_per_hour(void) {
@@ -105,19 +105,147 @@ static void test_sanitize_drops_junk(void) {
     TEST_ASSERT_EQUAL(50, b.used[4]);
 }
 
-static void test_columns(void) {
-    // 21 columns of 8 slots. Slots 0..7 -> column 0, 8..15 -> column 1.
+// ─── Pace, verdict, projection ───────────────────────────────────────────────
+static WeekPace p;
+static char l1[8], l2[8];
+
+static void verdict_is(const char* a, const char* b) {
+    burndown_verdict(&p, l1, l2);
+    TEST_ASSERT_EQUAL_STRING(a, l1);
+    TEST_ASSERT_EQUAL_STRING(b, l2);
+}
+
+static void test_elapsed(void) {
+    TEST_ASSERT_EQUAL(-1, burndown_elapsed(-1));
+    TEST_ASSERT_EQUAL(0, burndown_elapsed(BURNDOWN_WEEK_MINS));
+    TEST_ASSERT_EQUAL(0, burndown_elapsed(BURNDOWN_WEEK_MINS + 20));   // skew: the start
+    TEST_ASSERT_EQUAL(BURNDOWN_WEEK_MINS, burndown_elapsed(0));
+    TEST_ASSERT_EQUAL(5080, burndown_elapsed(5000));
+}
+
+static void test_pace_unknown(void) {
+    burndown_pace(&p, -1, 5000);
+    TEST_ASSERT_EQUAL(WEEK_UNKNOWN, p.level);
+    TEST_ASSERT_EQUAL(-1, p.used);
+    verdict_is("", "");
+    burndown_pace(&p, 30, -1);                                // no window (or spend-capped)
+    TEST_ASSERT_EQUAL(WEEK_UNKNOWN, p.level);
+    TEST_ASSERT_EQUAL(-1, burndown_used_at(NULL, &p, 0));
+    TEST_ASSERT_EQUAL(-1, burndown_projected_at(&p, 6000));
+}
+
+static void test_pace_behind(void) {
+    burndown_pace(&p, 8, 8000);                               // 20.6 % of the week gone
+    TEST_ASSERT_EQUAL(WEEK_ON, p.level);
+    TEST_ASSERT_EQUAL(2080, p.elapsed);
+    TEST_ASSERT_EQUAL(-13, p.delta);
+    TEST_ASSERT_EQUAL(-1, p.out_in);
+    verdict_is("-13", "BEHIND");
+}
+
+static void test_pace_on(void) {
+    burndown_pace(&p, 50, 5040);                              // exactly half way
+    TEST_ASSERT_EQUAL(WEEK_ON, p.level);
+    TEST_ASSERT_EQUAL(0, p.delta);
+    verdict_is("ON", "PACE");
+    burndown_pace(&p, 51, 5040);                              // a point ahead: still on pace
+    TEST_ASSERT_EQUAL(WEEK_ON, p.level);
+    verdict_is("ON", "PACE");
+}
+
+static void test_pace_ahead_runs_out_late(void) {
+    // 83 % with 80.2 % gone: the average rate hits 100 % ~6 h before the reset.
+    burndown_pace(&p, 83, 2000);
+    TEST_ASSERT_EQUAL(WEEK_AHEAD, p.level);
+    TEST_ASSERT_EQUAL(3, p.delta);
+    TEST_ASSERT_EQUAL(9734 - 8080, p.out_in);
+    verdict_is("+3", "AHEAD");
+}
+
+static void test_pace_out_in_days(void) {
+    // 62 % half way: at the average rate, out in 2.2 days, 31 h before the reset.
+    burndown_pace(&p, 62, 5000);
+    TEST_ASSERT_EQUAL(WEEK_OUT, p.level);
+    TEST_ASSERT_EQUAL(12, p.delta);
+    TEST_ASSERT_EQUAL(8193 - 5080, p.out_in);
+    verdict_is("OUT", "2D");
+}
+
+static void test_pace_out_in_hours(void) {
+    burndown_pace(&p, 91, 3000);
+    TEST_ASSERT_EQUAL(WEEK_OUT, p.level);
+    TEST_ASSERT_EQUAL(21, p.delta);
+    TEST_ASSERT_EQUAL(700, p.out_in);
+    verdict_is("OUT", "11H");
+    burndown_pace(&p, 99, 5080);                              // 5000 min in: out in 50 min
+    TEST_ASSERT_EQUAL(50, p.out_in);
+    verdict_is("OUT", "<1H");
+}
+
+static void test_pace_limit(void) {
+    burndown_pace(&p, 100, 3000);
+    TEST_ASSERT_EQUAL(WEEK_OUT, p.level);
+    TEST_ASSERT_EQUAL(0, p.out_in);
+    verdict_is("OUT", "NOW");
+    burndown_pace(&p, 130, 3000);                             // clamped
+    TEST_ASSERT_EQUAL(100, p.used);
+}
+
+static void test_pace_red_from_90_even_behind(void) {
+    burndown_pace(&p, 92, 300);                               // 97 % of the week gone
+    TEST_ASSERT_EQUAL(WEEK_OUT, p.level);
+    TEST_ASSERT_EQUAL(-5, p.delta);
+    TEST_ASSERT_EQUAL(-1, p.out_in);
+    verdict_is("-5", "BEHIND");
+}
+
+static void test_no_projection_in_the_first_hours(void) {
+    burndown_pace(&p, 10, BURNDOWN_WEEK_MINS - 600);          // 10 h in
+    TEST_ASSERT_EQUAL(WEEK_AHEAD, p.level);
+    TEST_ASSERT_EQUAL(-1, p.out_in);
+    TEST_ASSERT_EQUAL(-1, burndown_projected_at(&p, 1000));
+    verdict_is("+4", "AHEAD");
+}
+
+static void test_used_at_without_history(void) {
+    burndown_pace(&p, 30, 5000);                              // 5080 min in
+    TEST_ASSERT_EQUAL(0, burndown_used_at(NULL, &p, 0));      // a window starts at 0
+    TEST_ASSERT_EQUAL(15, burndown_used_at(NULL, &p, 2540));
+    TEST_ASSERT_EQUAL(30, burndown_used_at(NULL, &p, 5080));
+    TEST_ASSERT_EQUAL(-1, burndown_used_at(NULL, &p, 5081));  // the future
+    TEST_ASSERT_EQUAL(-1, burndown_used_at(NULL, &p, -1));
+    TEST_ASSERT_EQUAL(15, burndown_used_at(&b, &p, 2540));    // a blank history: the same
+}
+
+static void test_used_at_joins_real_points(void) {
     b.reset_min = T0;
-    b.used[2] = 5;
-    b.used[6] = 9;
-    b.used[17] = 20;
-    TEST_ASSERT_EQUAL(9, burndown_column(&b, 0, 21, 100));    // the latest in the column
-    TEST_ASSERT_EQUAL(-1, burndown_column(&b, 1, 21, 100));   // a gap stays a gap
-    TEST_ASSERT_EQUAL(20, burndown_column(&b, 2, 21, 100));
-    TEST_ASSERT_EQUAL(5, burndown_column(&b, 0, 21, 4));      // nothing after "now"
-    TEST_ASSERT_EQUAL(-1, burndown_column(&b, 2, 21, 15));    // the future
-    TEST_ASSERT_EQUAL(-1, burndown_column(&b, 0, 21, -1));    // now unknown
-    TEST_ASSERT_EQUAL(-1, burndown_column(&b, 21, 21, 100));  // out of range
+    b.used[10] = 5;                                           // at 630 min
+    b.used[20] = 12;                                          // at 1230 min
+    b.used[84] = 60;                                          // the current hour: not a point
+    burndown_pace(&p, 30, 5000);                              // now = 5080 min, slot 84
+    TEST_ASSERT_EQUAL(5, burndown_used_at(&b, &p, 630));
+    TEST_ASSERT_EQUAL(3, burndown_used_at(&b, &p, 315));      // 2.5 from the start, rounded
+    TEST_ASSERT_EQUAL(9, burndown_used_at(&b, &p, 930));      // 8.5 between the samples
+    TEST_ASSERT_EQUAL(21, burndown_used_at(&b, &p, 3155));    // across the gap to now
+    TEST_ASSERT_EQUAL(30, burndown_used_at(&b, &p, 5075));
+}
+
+static void test_used_at_follows_a_dip(void) {
+    b.reset_min = T0;
+    b.used[30] = 40;                                          // at 1830 min
+    burndown_pace(&p, 30, 5000);
+    TEST_ASSERT_EQUAL(35, burndown_used_at(&b, &p, 3455));    // half way down to now
+}
+
+static void test_projection(void) {
+    burndown_pace(&p, 62, 5000);                              // 5080 min in
+    TEST_ASSERT_EQUAL(-1, burndown_projected_at(&p, 5079));   // the past isn't projected
+    TEST_ASSERT_EQUAL(62, burndown_projected_at(&p, 5080));
+    TEST_ASSERT_EQUAL(85, burndown_projected_at(&p, 7000));
+    TEST_ASSERT_EQUAL(100, burndown_projected_at(&p, 8193));  // runs out here
+    TEST_ASSERT_EQUAL(100, burndown_projected_at(&p, BURNDOWN_WEEK_MINS));   // clipped
+    burndown_pace(&p, 8, 8000);
+    TEST_ASSERT_EQUAL(39, burndown_projected_at(&p, BURNDOWN_WEEK_MINS));    // ends the week at 39 %
 }
 
 int main(int, char**) {
@@ -131,6 +259,19 @@ int main(int, char**) {
     RUN_TEST(test_big_drop_is_a_new_window);
     RUN_TEST(test_reboot_into_a_later_window_clears);
     RUN_TEST(test_sanitize_drops_junk);
-    RUN_TEST(test_columns);
+    RUN_TEST(test_elapsed);
+    RUN_TEST(test_pace_unknown);
+    RUN_TEST(test_pace_behind);
+    RUN_TEST(test_pace_on);
+    RUN_TEST(test_pace_ahead_runs_out_late);
+    RUN_TEST(test_pace_out_in_days);
+    RUN_TEST(test_pace_out_in_hours);
+    RUN_TEST(test_pace_limit);
+    RUN_TEST(test_pace_red_from_90_even_behind);
+    RUN_TEST(test_no_projection_in_the_first_hours);
+    RUN_TEST(test_used_at_without_history);
+    RUN_TEST(test_used_at_joins_real_points);
+    RUN_TEST(test_used_at_follows_a_dip);
+    RUN_TEST(test_projection);
     return UNITY_END();
 }

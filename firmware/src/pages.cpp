@@ -275,8 +275,13 @@ static void clawd_cues(StageCues* c) {
     c->angry = usage_angry() || (debug_mood & 1);
     c->minute_of_day = minute_of_day();
     c->session_left_mins = spend_capped ? -1 : left_now(sr_at);
-    c->week = &week;
-    c->week_now_slot = (spend_capped || !week_live) ? -1 : burndown_slot_of(left_now(wr_at));
+    // The history only once a payload this boot has placed this window in it.
+    c->week = week_live ? &week : NULL;
+    const bool know = have_last && last.ok && !spend_capped;
+    float w = know ? last.weekly_pct : -1.0f;
+    if (w > 100.0f) w = 100.0f;
+    c->week_used = w >= 0.0f ? (int)(w + 0.5f) : -1;
+    c->week_left_mins = know ? left_now(wr_at) : -1;
 }
 
 void pages_tick(void) {

@@ -11,7 +11,8 @@
 // palette has a day, dusk and night variant. A rectangle shows at the times
 // in its `tod` mask and belongs to one group: 0 is static, others drift,
 // cycle as a frame of an animation, or stand for something the engine draws
-// live in their place: a clock's hands, an LED countdown, the burndown chart.
+// live in their place: a clock's hands, an LED countdown, the weekly poster's
+// burn-up chart and its number.
 
 #define SCENE_W        320
 #define SCENE_H        172
@@ -27,9 +28,12 @@ enum SceneGroupType : uint8_t {
     SG_FRAME  = 2,   // p = period ms, phase ms; frame k of n
     SG_CLOCK  = 3,   // p = centre x, centre y, radius; its one rect is the hands' slot
     SG_DIGITS = 4,   // p = digit w, digit h, stroke; box = "H:MM"; its one rect (lit colour) is the slot
-    SG_CHART  = 5,   // p = cell px | (no-data colour + 1) << 8, area colour, now colour;
-                     //     box = the plot; its one rect
+    // The weekly poster (burndown.h). Colours are palette indices, two to a
+    // p as lo | hi << 8; on both, p[1] = on pace | ahead, p[2] = out | unknown.
+    SG_CHART  = 5,   // p[0] = area | now marker; box = the plot; its one rect
                      //     (the line colour) is the slot
+    SG_WEEKNUM = 6,  // p[0] = the number's scale; box = the number (right) and
+                     //     the verdict (left); its one rect (the verdict's ink) is the slot
 };
 
 struct SceneRect {

@@ -4,8 +4,9 @@ A cosy study on a 2 px grid: teal walls over panelled wainscot, cream trim, a
 plank floor with a navy rug where he sits. Left, a big window onto the city
 (blue sky and drifting clouds by day, a setting sun at dusk, moon, stars and
 lit windows at night) above a bookcase; centre, a red "CODING" lightbox and a
-green banker's pendant lamp right over him; right, a framed chart of this
-week's usage burning down (live, scene.cpp draws it from burndown.h), an LED
+green banker's pendant lamp right over him; right, a framed poster of this
+week's usage (live, scene.cpp draws it from burndown.h: the % used now in its
+pace colour with a verdict, over a burn-up of the week so far), an LED
 display counting down to the next 5-hour window over a water cooler that
 glugs, and sticky notes. By day the
 lamp is off and the window throws two panes of sun on the planks. When the lamp
@@ -15,7 +16,8 @@ rug at his feet, so he sits in the light and stays the focal point in the dark;
 now and then it flickers. The band behind him (x 112..282, y 47..162) is kept
 to big calm shapes; nothing orange or tan sits near him.
 """
-from scenekit import Scene, W, H, FLOOR_Y, text_width, mix, shade
+from scenekit import (Scene, W, H, FLOOR_Y, WEEK_MINS, text_width, mix, shade, div_round,
+                      chart_row, chart_col_mid)
 
 CEIL = 6                 # ceiling and crown trim above this
 RAIL_Y = 104             # chair rail: plain wall above, panelled wainscot below
@@ -213,9 +215,10 @@ def scene():
     ink       = s.color(0x2A2E36, 0x2A2A34, 0x1A1C22)
     bar_a     = s.color(0x3A9088, 0x3E7C7C, 0x2F6B66)
     bar_b     = s.color(0x34497E, 0x383E72, 0x26305A)
-    arrow     = s.color(0xD04A3A, 0xC4463E, 0x8A3A34)
     pace_c    = s.color(0x8F8A7E, 0x8C7E72, 0x5C5A58)    # the ideal pace dots on the paper
-    bar_ghost = s.color(0xBFD9D4, 0xB4C9C0, 0x5A6E6C)    # hours the device saw nothing
+    lvl_ok    = s.color(0x2A8A3A, 0x2E7A3A, 0x1C4E26)    # the weekly number by pace (ui.cpp
+    lvl_ahead = s.color(0xC27406, 0xB46A10, 0x6A420C)    # bar_color's green / amber / red,
+    lvl_out   = s.color(0xCC3428, 0xBC342C, 0x7C221E)    # dark enough to read on the paper)
     seg_off   = s.color(0x381A1A, 0x3A1A1A, 0x381818)    # the LED's unlit segments
     jug       = s.color(0x8CCCEE, 0x9CB8DA, 0x3C5C7A)
     jug_hi    = s.color(0xD4F0FC, 0xD8E0F0, 0x9ABEDC)
@@ -447,30 +450,34 @@ def scene():
     bulb(halo, bulb_on)
     s.rect(LAMP_X - 4, BEAM_Y - 2, 8, 2, bulb_dim, tod="day")   # by day the bulb is off
 
-    # ─── Poster: this week's usage, burning down ──────────────────────────────
-    # x = the 7-day window (one 2 px column per 8 hours, a tick per day), y =
-    # weekly usage left. Faint dots trace the even pace from full to empty at
-    # the reset; the engine fills what was left each 8 hours over them (hours
-    # the device saw nothing as a pale dither at the last known level) and a
-    # dashed red line marks now.
-    px0, py0 = 208, 10
-    PW, PH = 42, 30                               # the plot: 21 columns x 15 rows of 2 px
-    s.rect(px0, py0, 56, 44, wood_dk)
-    s.rect(px0 + 2, py0 + 2, 52, 40, paper)
-    ax, ay = px0 + 8, py0 + 6                     # the plot's top-left
-    s.rect(ax - 2, ay, 2, PH + 2, ink)            # y axis
-    s.rect(ax - 2, ay + PH, PW + 2, 2, ink)       # x axis
-    for d in range(1, 7):                         # 1 px day ticks under it
-        s.rect(ax + d * PW // 7, ay + PH + 2, 1, 2, ink)
-    s.rect(ax - 4, ay, 2, 2, ink)                 # 100 % tick
-    with s.shape():                               # the even pace, every other column (under the bars)
-        cols, rows = PW // 2, PH // 2
-        for c in range(0, cols, 2):
-            left = 1 - (c + 0.5) / cols
-            hc = int(left * rows + 0.5)
-            if hc > 0:
-                s.rect(ax + c * 2, ay + PH - hc * 2, 2, 2, pace_c)
-    s.chart(ax, ay, PW, PH, bar_b, bar_a, arrow, ghost_c=bar_ghost)
+    # ─── Poster: this week's usage ───────────────────────────────────────────
+    # Top: the weekly % used now, big (3x5 at 2x, 10 px), in its pace colour
+    # (green at or behind the even pace, amber ahead, red from 90 % or when
+    # the average rate runs out a day or more before the reset), and a
+    # two-line verdict at the left ("+6 AHEAD", "-4 BEHIND", "ON PACE",
+    # "OUT 2D"). Under it a burn-up of the week: x = the 7-day window (a tick
+    # per day), y = 0..100 % used. Faint dots trace the even pace corner to
+    # corner; the engine fills what was used so far (straight lines between
+    # real points only: 0 at the window's start, the hours the device
+    # recorded, and now), dashes a now line above it, and dots the average
+    # rate on to the reset, clipped at 100 % with a mark where it runs out.
+    px0, py0, pw, ph = 208, 10, 56, 48            # the frame (clear of the lamp's cone)
+    s.rect(px0, py0, pw, ph, wood_dk)
+    s.rect(px0 + 2, py0 + 2, pw - 4, ph - 4, paper)
+    levels = (lvl_ok, lvl_ahead, lvl_out, pace_c)
+    s.week_number(px0 + 4, py0 + 3, pw - 8, ink, levels, scale=2)
+    PW, PH = 42, 26                               # the plot: 1 px per 4 hours, ~4 % per row
+    ax, ay = px0 + 7, py0 + 16                    # its top-left
+    s.rect(ax - 1, ay, 1, PH + 1, ink)            # y axis
+    s.rect(ax - 1, ay + PH, PW + 1, 1, ink)       # x axis
+    s.rect(ax - 2, ay, 1, 1, ink)                 # 100 % tick
+    for d in range(1, 8):                         # day ticks under it (the last = the reset)
+        s.rect(ax + d * PW // 7 - 1, ay + PH + 1, 1, 2, ink)
+    s.week_chart(ax, ay, PW, PH, bar_b, bar_a, ink, levels)
+    with s.shape():                               # the even pace, over the fill
+        for c in range(0, PW, 2):
+            v = div_round(100 * chart_col_mid(c, PW), WEEK_MINS)
+            s.rect(ax + c, ay + chart_row(v, PH), 1, 1, pace_c)
 
     # ─── LED countdown to the next 5-hour window, over the water cooler ──────
     # 7-segment digits 8 x 14 (the largest that fit beside the poster), red
