@@ -143,10 +143,24 @@ bool screensaver_ready(const QuietInput* in, const ClawdTuning* t);
 struct TurnTracker {
     bool     in_turn;
     uint32_t prompt_at;
+    bool     stopped;            // a Stop has been seen
+    uint32_t stopped_at;
+    uint32_t busy_at;            // tools last ran (activity 1+), for clawd_working
 };
 void turn_clear(TurnTracker* t);
 // Feed a fired hook event; returns true when this event deserves the wave.
 bool turn_on_event(TurnTracker* t, char event, uint32_t now, const ClawdTuning* tune);
+
+// Claude is working: a turn is open (a prompt, no Stop yet, and the prompt or
+// the last tool activity within CLAWD_WORKING_TURN_MS, in case the Stop never
+// arrived; a long agentic turn stays open while its tools keep running) or
+// tools ran in the last minute (activity 1+). Records the activity in `t`. The activity window outlives a Stop by up to a
+// minute, so tools only count once CLAWD_WORKING_STOP_MS has passed since the
+// last Stop (a tool after that: another session, or an approval). The corner
+// Clawd types on his laptop meanwhile.
+#define CLAWD_WORKING_TURN_MS (10u * 60u * 1000u)
+#define CLAWD_WORKING_STOP_MS (60u * 1000u)
+bool clawd_working(TurnTracker* t, uint32_t now, int activity);
 
 // ─── Shows ───────────────────────────────────────────────────────────────────
 // Which mood group a show performs from. The trigger (sustained activity 3)

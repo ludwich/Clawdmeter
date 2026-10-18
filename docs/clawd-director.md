@@ -21,6 +21,8 @@ what you want (see "A tap on the meters" below).
 | `firmware/src/field.{h,cpp}` | A flat-colour shape on an overlay layer (a rectangle plus two small extra rectangles) that redraws only the strips that change colour (see "Redraw cost and frame rate"). The face is a field. |
 | `firmware/src/perf.{h,cpp}` | The `perf` serial command: refresh count, timing and pixels sent for the last face rise, its settle, face drop and performance. |
 | `firmware/src/clawd_anim.{h,cpp}` | Read-only view of the official animations. It is the only translation unit that includes `splash_animations.h` (about 400 KB of static data). |
+| `firmware/src/pages.{h,cpp}` | Extra landscape pages on boards whose panel can turn (`display_hal_set_landscape`): the Clawd page and a usage page, cycled by the PWR button. Puts the director offstage while one is up. See "Pages". |
+| `firmware/src/stage.{h,cpp}` | The Clawd page: Clawd alone, large, playing official animations; at his laptop while Claude works; moods (yelling, angry) drawn around the sprite as LVGL shapes. |
 | `firmware/src/ui.{h,cpp}` | Draws the meters only: cards, clock, status line, battery, the seat. Stale data dims the meters (see below); it never adds a second creature. |
 
 `main.cpp` feeds the director per payload (`director_on_payload` after
@@ -92,6 +94,7 @@ passed. Beat changes always print; every step prints too after
 | Beat | Trigger | Steps |
 |---|---|---|
 | `home` | default | Corner autonomy on: jittered idle gaps (±40 % of 10 / 7 / 5 / 3.5 s by mood), mood-picked acts, never the same act twice running, and lurk trips (PSRAM). Also checks the gates below. |
+| `home`, working | Claude is working (`clawd_working`: a prompt with no Stop yet, with the prompt or the last tool activity under 10 min ago, or activity 1+ once a minute has passed since the last Stop) | His idle acts and lurk trips give way to the laptop: he opens it, types in its loop for as long as the work goes on, then closes it and sits back down; 400 ms later he opens it again if Claude is still at it. Reactions (noticing, the long-turn wave, joy) and every other beat still cut in; one that waits for him (a show) gets him once he has closed the laptop, since he stops typing when his autonomy goes off. Needs idle acts on (liveliness 2+). |
 | `corner` | notice, wave, joy, or after a transition | Waits for the commanded corner act or walk to finish, then `home`. |
 | `show` | `a == 3` held for 5 min; at most one per 15 min; hooks seen; meters live | Points at the bar (or, if he's out on a lurk trip, heads straight out), walks off left at 1.5×, walks back on full size at 1.5×, one scene (loop held 16 s, so about 20 s), waves, walks off left, and the corner Clawd walks back in to his seat. Without the performer (no PSRAM): points, then dances twice (jumps for joy twice when usage is Heavy) and waves, all in his seat. |
 | `screensaver` | 10 min with no engagement; needs hooks seen or a window that hasn't started; meters live | Walks off through the nearest edge (a lurk trip finishes its peek first), face rises and rests (blinks every 2–6 s, about one in five a double, glances where the far eye travels 1.5×). Every 3–5 min, a calm dip: the face drops onto the meters, he walks on, plays one calm scene (magnifier or walking, alternating) and walks off, then the face rises and he rests again. Without the performer the corner Clawd walks back to his seat, sits for the scene's length and walks off again. |
@@ -341,7 +344,8 @@ a board capability, with no NVS override, desktop setting, or serial toggle.
 ## Boards without PSRAM (C6)
 
 - Corner Clawd: animated. Its buffer, sized for the largest corner act
-  (jumping happy, 28×30 cells × 3 px, about 23 KB), falls back to internal RAM.
+  (jumping happy, 28×30 cells × 3 px, about 23 KB; sized by area, so the
+  wider but shorter laptop fits), falls back to internal RAM.
 - Face: plain LVGL objects, the same as on S3.
 - No performer (its buffer is about 690 KB): a show is corner acts (pointing,
   dancing or jumping happy twice, a wave) and a calm dip is the corner Clawd
@@ -355,8 +359,135 @@ a board capability, with no NVS override, desktop setting, or serial toggle.
 - BOOT (Space) and SECONDARY (Shift+Tab): unchanged. They also count as
   engagement and wake the screensaver.
 - PWR short press: cycles brightness and counts as engagement (waking the
-  screensaver, face or calm dip). Hold to pair is unchanged.
+  screensaver, face or calm dip). Hold to pair is unchanged. On boards with
+  pages (below) one press is the next page and two presses within 350 ms
+  cycle brightness; an alert's dismiss press still comes first.
 - Shows are earned rather than opened by a button or a tap.
+
+## Pages
+
+Opt-in per board: only boards that implement `display_hal_set_landscape()`
+(`docs/porting/hal-contract.md`) get them; everywhere else the meters are the
+only page and nothing below applies. The PWR button cycles:
+
+| Page | Orientation | What's on it |
+|---|---|---|
+| meters | native | The dashboard with the corner Clawd, as everywhere. |
+| Clawd | landscape | Clawd alone, large (`stage.cpp`), in front of scenery that says where he is: an office while Claude works (at his laptop until the work stops), outside while he plays (official animations only). See below. |
+| usage | landscape | The two usage bars, large, with their reset lines; bar colours and dimming as on the meters. |
+
+- **One Clawd on screen.** Each extra page is its own LVGL screen, so the
+  meters and the corner Clawd aren't drawn while it's up. The director is
+  offstage (`director_set_offstage`): beats hold where they are, no show,
+  screensaver or peek starts behind the page; payload reactions still reach the
+  hidden corner Clawd. Back on the meters counts as engagement.
+- **Moods** are drawn around the sprite, never into it: *yelling* (an alert is
+  up: a shaking speech bubble with the alert text and sound waves) and *angry*
+  (usage in the Heavy group or the session at 80 %+: an anger mark and steam).
+  An alert on the usage page switches to the Clawd page; on the meters the
+  usual attention beat plays. A press dismisses it wherever it shows.
+- From the meters with the face up (any room but the meters), a press is
+  "show me the meters" (`clawd home`), not the next page.
+- C6: the Clawd page's sprite buffer (~60 KB) is allocated when the page opens
+  and freed when it closes.
+- QA: `page <n>`, `mood <bits>`, `work` and `tod` on the serial console
+  (`docs/porting/hal-contract.md`; details below).
+
+### The Clawd page's scenery
+
+The Clawd page (`stage.cpp`) is Clawd alone, large (cell 5 on 320×172, feet
+at y 162), in front of pixel-art scenery (`scene.cpp`) that says where he is:
+
+- **Office** while Claude works (`director_claude_working`): a window onto
+  the city with a bookcase under it (plant, books, steaming coffee, globe),
+  sticky notes, a pendant lamp over him (lit at dusk and night), a blinking
+  "CODING" sign, and a live wall: a red LED display over the water cooler
+  counts down to the next 5-hour window (H:MM, from `sr` and the minutes
+  since that payload; colon blinking; `-:--` when the window hasn't started,
+  is unknown or ran out, and always on spend-capped accounts) and a framed
+  poster shows this week's usage (below). He sits at his desk spot (the scene's `DESK` anchor, facing
+  right) and plays the official laptop act, typing in its loop until the
+  work stops.
+- **Outside** while he plays: sky, sun or moon, drifting clouds, grass. He
+  walks or scuttles about, waves, dances, jumps, points, skates and plays
+  with his balls, picked at random with a still pause between that shortens
+  as usage gets busier.
+
+The weekly poster (54×48 px, between the lamp, 2 px clear of its cone, and
+the LED display):
+
+- **The number**, top right: the weekly % used now (`w`, rounded), digits
+  in the 3×5 font at 2× (10 px tall) with a small `%`. Its colour follows
+  the pace like the meters' pace marker: green at or behind the even pace
+  (the elapsed share of the 7-day window, `(10080 − wr) / 10080`, within a
+  point counts as on it), amber ahead, red from 90 %, at the limit, or when
+  the average rate (used / elapsed) would run out a day or more before the
+  reset. `--` in grey when `w` or `wr` is unknown, and always on
+  spend-capped accounts.
+- **The verdict**, two 3×5 lines at the top left, the first in the
+  number's colour: `-13`/`UNDER`, `ON`/`PACE`, `+3`/`OVER` (points against
+  the even pace), or, when red and the average rate reaches 100 % before the
+  reset, `EMPTY`/`IN 2D` (days until then; `IN 11H` under a day, `IN <1H`
+  under an hour), and `EMPTY`/`NOW` at the limit. The run-out isn't
+  projected in the window's first 12 hours.
+- **The burn-up**, below: x = the weekly window (reset − 7 days to the reset,
+  a tick per day, one px column per 4 hours), y = 0..100 % used. A solid
+  ink staircase traces the even pace corner to corner, over the fill. The %
+  used so far is a teal fill under a navy line built from real points only,
+  joined by straight lines:
+  0 % at the window's start (a weekly window starts empty), each hour the
+  device recorded (at its half hour), and `w` now. A dashed line marks now,
+  and the average rate is dotted on from there to the reset in the number's
+  colour, clipped at 100 %, with a 2×3 tick under the x axis in that colour
+  where it gets there (when you'd run out). With no recorded history the used part is one straight line from the
+  start to now, so the poster is useful from the first payload.
+
+The math is pure and tested (`burndown.cpp`: `burndown_pace`,
+`burndown_verdict`, `burndown_used_at`, `burndown_projected_at`;
+`test/test_burndown`); `scene.cpp` only draws it. The device has no history
+before it boots, so it records one: `burndown.cpp` keeps the weekly % used
+per hour slot of the window (168 bytes, `0xFF` = no data) from real samples
+only (`ok && !rp`, Pro/Max), placed by `wr` and told apart by the reset time
+on the app's clock (`t` / 60 + `wr`). A reset more than 6 hours from the
+recorded one, or weekly use dropping 10 points, starts a new window and
+clears it. `pages.cpp` saves it in NVS (namespace `clawdweek`) at most once
+an hour, so it survives reboots, and hands it to the poster only once a
+payload this boot has placed the current window (before that the chart is
+the straight line). Hours the device didn't see are never drawn as values;
+the line just runs straight across them.
+
+Both scenes re-colour by the local time of day: night 21:00–05:59, dusk
+06:00–07:59 and 18:00–20:59, day otherwise (day when the app sends no clock).
+The time comes from the payload's `t` (local wall-clock epoch) plus the time
+since it arrived.
+
+Switching runs a venetian-blind wipe (~800 ms): eight slats close in a
+cascade with a terra-cotta edge, the scene swaps while the screen is covered,
+and they open again. Work starting switches at once, and under the blinds he
+moves to his desk and opens the laptop. Work stopping lets the laptop act play
+out (he closes it and stands up), then the blinds take him outside, where he
+jumps for joy. Each scene holds at least 3 s, so a flicker of work doesn't
+flap between them; the page opens straight in the right scene.
+
+Moods ride on him in either scene: a shaking speech bubble with sound waves
+while an alert is up, an anger mark and steam when usage burns (Heavy rate
+group or the session at 80 %).
+
+Cost: the scenery is const data in flash (`scene_office.h`,
+`scene_outdoor.h`, generated by `tools/scenes/scenekit.py`; see
+`tools/README.md`) drawn by one full-screen LVGL object, so it costs a few
+hundred bytes of RAM (plus the 168-byte week). Animated bits invalidate only
+their own boxes, at most 10 Hz each; the countdown redraws once a minute (its
+colon twice a second), the poster's number and chart when a sample lands or
+a minute passes, and a time-of-day change once.
+
+QA on the serial console: `page 1` (the Clawd page), `work 1` / `work 0`
+(force Claude working or not; `work -1` = the real cue), `tod <minute>` (the
+page's local time, e.g. `tod 1380` for night; `tod -1` = the real clock),
+`mood <bits>` (1 angry, 2 yelling, 0 = real). C6 has no `screenshot`, so
+check by eye. Scene previews with Clawd placed exactly as on the device:
+`python tools/scenes/scenekit.py preview all` (the live wall with fake data:
+`--sr`, `--w`, `--wr`, `--week`; `tools/README.md`).
 
 ## Tunables
 

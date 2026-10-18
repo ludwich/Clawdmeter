@@ -39,6 +39,17 @@ is compiled differently for them; set them directly in `caps.cpp`.
 | `has_pwr_button` | `false` | A PWR-role button reaches the firmware (AXP PKEY, IO-expander pin or GPIO): brightness, hold ~3 s and release to pair. `false` when there is none (LCD-4, whose KEY/PWR is a hardware reset): the pairing hint then says to pair from the computer, and a 5 s touch hold on it clears the bonds (`pair_hold.h`). The `unpair` serial command clears them on every board. |
 | `has_touch` | `true` | The board has a touchscreen. `false` (a screen without a touch controller): a BOOT press (the PWR-role key when it is the only button, `button_count = 0`) first dismisses an active alert (`director_button`) and only then does its normal job (push to talk), since there is no tap to do it. A board with neither touch nor buttons lets the alert time out after 2 minutes. `SIM_NO_TOUCH=1` sets the simulator capability. |
 
+### Pages (opt-in per board)
+
+The extra landscape pages (`pages.h`: Clawd alone, large usage bars) have no
+`BoardCaps` field. A board opts in by implementing
+`display_hal_set_landscape()` (`docs/porting/hal-contract.md`); the weak
+default returns `false` and those boards keep the meters as their only page
+and the PWR button's single press as brightness. Implementing it changes the
+PWR-role button: one press is the next page, two presses within 350 ms cycle
+brightness. Say so in the board's `CLAUDE.md`. The Clawd page allocates its
+~60 KB sprite buffer only while it's shown, so it fits a C6.
+
 ## Build-flag macros
 
 `BOARD_HAS_PSRAM` is set as a `-D` build flag in `platformio.ini` (not in `board.h`) on chips with external PSRAM wired up. Shared code (`main.cpp`) and per-board display drivers use it to choose between `MALLOC_CAP_SPIRAM` (large buffers) and `MALLOC_CAP_INTERNAL` (smaller buffers, partial-render LVGL, screenshot capture disabled). The full-size sprites (`performer.cpp`, `mascot.cpp`) ask for PSRAM at run time and fall back to corner acts without it. New ESP32-C6 / ESP32-C3 ports must leave this undefined.

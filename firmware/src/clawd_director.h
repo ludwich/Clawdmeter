@@ -62,6 +62,17 @@ void director_set_attn_anim(int seconds);
 // SIM_TRACE=1 for walkthrough timings). Beat changes always print.
 void director_set_trace(bool on);
 
+// While another page is on the panel (pages.h) the beats hold where they
+// are: no show, screensaver or peek starts behind it. Reactions to payloads
+// still reach the hidden corner Clawd, and an alert still runs its course
+// (a press dismisses it, it times out). Leave the meters only from ROOM_METERS.
+void director_set_offstage(bool on);
+// Claude is working (clawd_working), as of the last director_tick.
+bool director_claude_working(void);
+// An alert is up (until a press, `x` or its timeout) and its message.
+bool        director_alert_active(void);
+const char* director_alert_message(void);
+
 DirectorRoom director_room(void);
 const char*  director_beat_name(void);
 

@@ -67,6 +67,7 @@ bool mascot_in_attention(void) {
     return m_attn || m_mode == M_BIG_IN || m_mode == M_BIG_ACT || m_mode == M_BIG_OUT ||
            m_mode == M_HELD || m_mode == M_SEAT_ATTN || (m_mode == M_WALK && m_after == A_BIG);
 }
+void mascot_set_working(bool on) { (void)on; }
 void mascot_autonomy(bool on) { m_autonomy = on; if (on && m_mode == M_SEATED) m_seated_since = now(); }
 
 bool mascot_act(const char*, uint8_t times, bool, uint16_t speed_pct) {

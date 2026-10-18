@@ -12,3 +12,8 @@ static inline void* heap_caps_malloc(size_t size, unsigned caps) {
     return malloc(size);
 }
 static inline void heap_caps_free(void* ptr) { free(ptr); }
+// No real heap to report on the host: a large constant (stage.cpp logs it).
+static inline size_t heap_caps_get_free_size(unsigned caps) {
+    (void)caps;
+    return 8u * 1024u * 1024u;
+}
