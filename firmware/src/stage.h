@@ -36,10 +36,11 @@ struct StageCues {
     const char* alert_text;   // its message
     bool        angry;        // usage burning (pages.cpp decides)
     int         minute_of_day; // local wall-clock minute 0..1439, -1 unknown
-    // The office wall (scene_set_live): the LED countdown and the burndown poster.
+    // The office wall (scene_set_live): the LED countdown and the weekly poster.
     int             session_left_mins; // until the 5-hour window resets, -1 unknown / none
     const Burndown* week;              // this week's history (burndown.h), NULL = none
-    int             week_now_slot;     // the hour slot it is now, -1 unknown
+    int             week_used;         // weekly % used now (`w`, 0..100), -1 unknown / none
+    int             week_left_mins;    // until the weekly reset (`wr` run on), -1 unknown
 };
 
 // Build the sprite on `scr` (w x h px), already in the scene `cues` call for

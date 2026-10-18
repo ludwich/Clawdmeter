@@ -42,11 +42,14 @@ bool    scene_transition_covered(void);  // ...and has the screen covered
 void    scene_tick(uint32_t now, int minute_of_day);
 // The office's live wall: the LED countdown shows `countdown_mins` left in
 // the 5-hour window as H:MM (-1 = unknown or no window: "-:--"); the poster
-// charts `week` (burndown.h; NULL = nothing) up to hour slot `week_now`
-// (-1 = unknown: nothing drawn). Cheap to call per loop: only what changed
-// is redrawn.
+// shows the weekly % used now (`week_used`, 0..100) in its pace colour with
+// a verdict, and charts the week so far from `week`'s history (burndown.h;
+// NULL = none: one straight line from the window's start) with the average
+// rate projected to the reset. `week_left_mins` = minutes to the weekly
+// reset; either < 0 = unknown ("--%", no chart). Cheap to call per loop:
+// only what changed is redrawn.
 struct Burndown;
-void    scene_set_live(int countdown_mins, const Burndown* week, int week_now);
+void    scene_set_live(int countdown_mins, const Burndown* week, int week_used, int week_left_mins);
 // The office desk: Clawd's body-left x (px) when he sits at his laptop.
 int     scene_anchor_desk_x(void);
 // An anchor of the scene showing, in px. False when it has none.

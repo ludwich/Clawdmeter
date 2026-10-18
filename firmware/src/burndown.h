@@ -1,11 +1,14 @@
 #pragma once
 #include <stdint.h>
 
-// The weekly burndown on the office poster (scene.h): how much of the 7-day
-// usage limit was left at each hour of the current weekly window, recorded on
-// the device from the payloads it sees. Pure: no Arduino, no LVGL, so the
-// slotting runs in the native unit tests (test/test_burndown); pages.cpp
-// feeds it and keeps it in NVS.
+// The weekly poster in the office (scene.h): this week's usage so far, how
+// it compares with an even pace, and where the average rate is heading.
+// Pure: no Arduino, no LVGL, so it runs in the native unit tests
+// (test/test_burndown); pages.cpp feeds the history and keeps it in NVS,
+// scene.cpp draws from it.
+//
+// The history is how much of the 7-day limit was used at each hour of the
+// current weekly window, recorded on the device from the payloads it sees.
 //
 // The window is 168 hour slots, slot 0 starting 7 days before the reset
 // (slot = (10080 - wr) / 60). Each slot holds the weekly % used last seen in
@@ -44,7 +47,48 @@ int  burndown_slot_of(int weekly_reset_mins);
 int  burndown_sample(Burndown* b, int32_t now_min, int weekly_reset_mins, float weekly_pct);
 // After loading from NVS: a blob that doesn't make sense is cleared.
 void burndown_sanitize(Burndown* b);
-// For drawing: the weekly % used shown in column `col` of `cols` (each
-// column covers SLOTS / cols slots): the latest recorded slot in the column
-// at or before `now_slot`. -1 when there is none (a gap, or the future).
-int  burndown_column(const Burndown* b, int col, int cols, int now_slot);
+
+// ─── Pace, verdict and projection ────────────────────────────────────────────
+// `used` = the weekly % used now (`w`, rounded, 0..100), `elapsed` = minutes
+// into the window (BURNDOWN_WEEK_MINS - `wr`, clamped 0..WEEK_MINS). Even
+// pace is the elapsed share of the week; the average rate is used / elapsed,
+// and at that rate the window reaches 100 % at elapsed * 100 / used minutes.
+#define BURNDOWN_GRACE_PCT      1            // within a point of pace is on pace (pace.h)
+#define BURNDOWN_RED_PCT        90           // the number goes red from here
+#define BURNDOWN_OUT_MARGIN     (24 * 60)    // red: the rate runs out a day or more before the reset
+#define BURNDOWN_PROJECT_MINS   (12 * 60)    // no projection in the window's first 12 hours
+
+enum WeekLevel {
+    WEEK_UNKNOWN,   // no `w` / `wr`, or spend-capped: "--%"
+    WEEK_ON,        // at or behind pace: green
+    WEEK_AHEAD,     // ahead of pace: amber
+    WEEK_OUT,       // >= 90 %, at the limit, or out a day or more early: red
+};
+
+struct WeekPace {
+    uint8_t level;      // WeekLevel
+    int16_t used;       // % used 0..100, -1 unknown
+    int16_t elapsed;    // minutes into the window 0..WEEK_MINS, -1 unknown
+    int16_t delta;      // used minus even pace, rounded points (+ = ahead)
+    int16_t out_in;     // minutes until the average rate reaches 100 %: 0 = at
+                        // the limit, -1 = not before the reset, or not projected
+};
+
+// Minutes into the window for `wr` minutes left, -1 when unknown.
+int  burndown_elapsed(int weekly_reset_mins);
+// used_pct < 0 or weekly_reset_mins < 0: unknown.
+void burndown_pace(WeekPace* p, int used_pct, int weekly_reset_mins);
+// The verdict beside the number, two short lines (each up to 7 chars + NUL):
+// "+6"/"AHEAD", "-4"/"BEHIND", "ON"/"PACE", "OUT"/"2D" (or "9H", "<1H") when
+// red and the average rate runs out before the reset, "OUT"/"NOW" at the
+// limit; both empty when unknown.
+void burndown_verdict(const WeekPace* p, char line1[8], char line2[8]);
+// The % used `t` minutes into the window, for 0 <= t <= p->elapsed: straight
+// lines between real points only (0 % at the window's start, each recorded
+// hour slot before the current one at its half hour, and `used` now). `b`
+// may be NULL (no history: one straight line). -1 when unknown or t is
+// outside 0..elapsed.
+int  burndown_used_at(const Burndown* b, const WeekPace* p, int t);
+// The average rate's % used at `t` minutes (t >= elapsed), clipped at 100;
+// -1 when there is no projection (unknown, or the window's first hours).
+int  burndown_projected_at(const WeekPace* p, int t);

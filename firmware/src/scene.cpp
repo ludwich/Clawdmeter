@@ -4,6 +4,8 @@
 #include "burndown.h"
 #include "scene_office.h"
 #include "scene_outdoor.h"
+#include <stdio.h>
+#include <string.h>
 
 #define SCENE_MAX_GROUPS 48      // tools/scenes/scenekit.py MAX_GROUPS
 #define ANIM_MS          100     // drift and frames step at most this often
@@ -30,6 +32,17 @@ static const int8_t HAND_SIN[60] = {
 static const uint8_t SEG7[11] = { 0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F, 0x40 };
 #define SEG_DASH  10
 #define COLON_MS  500            // the countdown's colon: on, off, each half second
+
+// The 3x5 pixel font's glyphs the poster needs (scenekit.py FONT): bit
+// row * 3 + col, top-left first.
+static const struct { char c; uint16_t m; } GLYPHS[] = {
+    {'0', 0x7B6F}, {'1', 0x749A}, {'2', 0x72A3}, {'3', 0x38A3}, {'4', 0x49ED},
+    {'5', 0x38CF}, {'6', 0x7BCE}, {'7', 0x24A7}, {'8', 0x7BEF}, {'9', 0x39EF},
+    {'%', 0x52A5}, {'+', 0x05D0}, {'-', 0x01C0}, {'<', 0x4454}, {'A', 0x5BEA},
+    {'B', 0x3AEB}, {'C', 0x624E}, {'D', 0x3B6B}, {'E', 0x72CF}, {'H', 0x5BED},
+    {'I', 0x7497}, {'N', 0x5B6B}, {'O', 0x2B6A}, {'P', 0x12EB}, {'T', 0x2497},
+    {'U', 0x7B6D}, {'W', 0x5FED},
+};
 
 // "H:MM": the three digits' x and the colon's, a stroke-wide gap between
 // everything (scenekit.py digits_layout).
@@ -64,9 +77,11 @@ static SceneCoveredCb  covered_cb = NULL;
 // The live wall (scene_set_live).
 static int             countdown = -1;  // minutes left in the 5-hour window, -1 unknown
 static bool            colon_on = true;
-static const Burndown* week = NULL;
-static int             week_now = -1;
+static const Burndown* week = NULL;   // this week's history, NULL = none
 static uint16_t        week_rev = 0;
+static int             week_used = -1;  // `w` now, -1 unknown
+static int             week_left = -1;  // `wr` now, -1 unknown
+static WeekPace        pace = { WEEK_UNKNOWN, -1, -1, 0, -1 };
 
 static Wipe     wipe = W_NONE;
 static bool     wipe_up = false;        // cascade from the bottom (leaving the office)
@@ -236,47 +251,117 @@ static void draw_digits(lv_layer_t* layer, const lv_area_t* clip, lv_draw_fill_d
     }
 }
 
-// The weekly burndown: a dashed "now" line, then per column up to now the
-// weekly usage left as a filled bar whose top cell is the line colour. A
-// column without data is a dither at the last known level in the no-data
-// colour (nothing before the first sample).
-static void draw_chart(lv_layer_t* layer, const lv_area_t* clip, lv_draw_fill_dsc_t* d,
-                       const SceneGroup* g, const uint32_t* pal, uint8_t line_c) {
-    if (!week || week_now < 0) return;
-    const int x = g->box[0], y = g->box[1], w = g->box[2], h = g->box[3];
-    const int cell = (g->p[0] & 0xFF) ? (g->p[0] & 0xFF) : 2;
-    const int ghost = ((uint16_t)g->p[0]) >> 8;    // no-data colour + 1, 0 = none
-    const int cols = w / cell, rows = h / cell;
-    if (cols <= 0 || rows <= 0) return;
-    const int nc = LV_MIN(cols - 1, week_now * cols / BURNDOWN_SLOTS);
-    d->color = lv_color_hex(pal[(uint8_t)g->p[2]]);
-    for (int r = 0; r < rows; r += 2) fill_at(layer, clip, d, x + nc * cell, y + r * cell, cell, cell);
-    const lv_color_t area = lv_color_hex(pal[(uint8_t)g->p[1]]);
-    const lv_color_t line = lv_color_hex(pal[line_c]);
-    int last_hc = 0;                          // the last known height, 0 = none yet
-    for (int c = 0; c <= nc; c++) {
-        const int used = burndown_column(week, c, cols, week_now);
-        if (used < 0) {
-            if (ghost && last_hc > 0) {       // carried forward, dithered
-                d->color = lv_color_hex(pal[ghost - 1]);
-                for (int r = rows - last_hc; r < rows; r += 2)
-                    fill_at(layer, clip, d, x + c * cell, y + r * cell, cell, cell);
+// ─── The weekly poster ───────────────────────────────────────────────────────
+static uint16_t glyph_of(char c) {
+    for (size_t i = 0; i < sizeof(GLYPHS) / sizeof(GLYPHS[0]); i++)
+        if (GLYPHS[i].c == c) return GLYPHS[i].m;
+    return 0;                                   // a space, or not in the set
+}
+
+static int text_w(const char* s, int scale) {
+    const int n = (int)strlen(s);
+    return n ? n * 4 * scale - scale : 0;
+}
+
+// Text in the 3x5 font at `scale`, one fill per run of lit cells in a row.
+static void draw_text(lv_layer_t* layer, const lv_area_t* clip, lv_draw_fill_dsc_t* d,
+                      int x, int y, const char* s, int scale) {
+    for (; *s; s++, x += 4 * scale) {
+        const uint16_t m = glyph_of(*s);
+        for (int r = 0; r < 5; r++) {
+            for (int c = 0; c < 3; c++) {
+                if (!((m >> (r * 3 + c)) & 1)) continue;
+                int run = 1;
+                while (c + run < 3 && ((m >> (r * 3 + c + run)) & 1)) run++;
+                fill_at(layer, clip, d, x + c * scale, y + r * scale, run * scale, scale);
+                c += run - 1;
             }
-            continue;
-        }
-        const int left = 100 - used;
-        int hc = (left * rows + 50) / 100;
-        if (left > 0 && hc == 0) hc = 1;      // a sliver left still shows
-        last_hc = hc;
-        if (hc <= 0) continue;
-        const int top = y + h - hc * cell;
-        d->color = line;
-        fill_at(layer, clip, d, x + c * cell, top, cell, cell);
-        if (hc > 1) {
-            d->color = area;
-            fill_at(layer, clip, d, x + c * cell, top + cell, cell, (hc - 1) * cell);
         }
     }
+}
+
+// p[1] = on pace | ahead << 8, p[2] = out | unknown << 8 (palette indices).
+static lv_color_t level_color(const SceneGroup* g, const uint32_t* pal) {
+    const uint16_t a = (uint16_t)g->p[1], b = (uint16_t)g->p[2];
+    switch (pace.level) {
+    case WEEK_ON:    return lv_color_hex(pal[a & 0xFF]);
+    case WEEK_AHEAD: return lv_color_hex(pal[a >> 8]);
+    case WEEK_OUT:   return lv_color_hex(pal[b & 0xFF]);
+    default:         return lv_color_hex(pal[b >> 8]);
+    }
+}
+
+// The plot's row for `pct` used: 100 % on the top row, 0 % on the bottom.
+static int row_of(int pct, int h) { return (h - 1) - (pct * (h - 1) + 50) / 100; }
+
+// The minute in the window at the middle of plot column `c` of `w`.
+static int col_mid(int c, int w) {
+    return (int)((2 * (int32_t)c + 1) * BURNDOWN_WEEK_MINS / (2 * w));
+}
+
+// The burn-up, one px column per 1/w of the week: the % used so far from
+// real points only (burndown_used_at), filled under its line; a dashed now
+// marker above it; then the average rate dotted on to the reset in the
+// number's colour, clipped at 100 % with a mark where it gets there.
+static void draw_chart(lv_layer_t* layer, const lv_area_t* clip, lv_draw_fill_dsc_t* d,
+                       const SceneGroup* g, const uint32_t* pal, uint8_t line_c) {
+    if (pace.level == WEEK_UNKNOWN) return;
+    const int x = g->box[0], y = g->box[1], w = g->box[2], h = g->box[3];
+    if (w < 2 || h < 2) return;
+    const uint16_t p0 = (uint16_t)g->p[0];
+    const lv_color_t area = lv_color_hex(pal[p0 & 0xFF]);
+    const lv_color_t line = lv_color_hex(pal[line_c]);
+    const int e = pace.elapsed;
+    const int nc = LV_MIN(w - 1, e * w / BURNDOWN_WEEK_MINS);
+    d->color = lv_color_hex(pal[p0 >> 8]);
+    for (int r = 0; r < row_of(pace.used, h) - 1; r += 2) fill_at(layer, clip, d, x + nc, y + r, 1, 1);
+    int prev = -1;
+    for (int c = 0; c <= nc; c++) {
+        const int v = burndown_used_at(week, &pace, c == nc ? e : col_mid(c, w));
+        if (v < 0) continue;
+        const int top = row_of(v, h);
+        int lo = top, hi = top;                 // joined to the last column's
+        if (prev > top + 1) hi = prev - 1;
+        else if (prev >= 0 && prev < top - 1) lo = prev + 1;
+        d->color = line;
+        fill_at(layer, clip, d, x + c, y + lo, 1, hi - lo + 1);
+        if (hi < h - 1) {
+            d->color = area;
+            fill_at(layer, clip, d, x + c, y + hi + 1, 1, h - 1 - hi);
+        }
+        prev = top;
+    }
+    d->color = level_color(g, pal);
+    bool hit = false;
+    for (int c = nc + 1; c < w; c++) {
+        const int v = burndown_projected_at(&pace, col_mid(c, w));
+        if (v < 0) break;
+        if ((c - nc) % 2 == 0) fill_at(layer, clip, d, x + c, y + row_of(v, h), 1, 1);
+        if (v >= 100 && !hit) {                 // where the average rate runs out
+            hit = true;
+            fill_at(layer, clip, d, x + LV_MIN(c, w - 2), y, 2, 3);
+        }
+    }
+}
+
+// The number (the weekly % used, "--" unknown) at `scale` with a 1x "%" on
+// its baseline, right-aligned in the level's colour; the verdict's two lines
+// at the left in `ink_c`.
+static void draw_week_text(lv_layer_t* layer, const lv_area_t* clip, lv_draw_fill_dsc_t* d,
+                           const SceneGroup* g, const uint32_t* pal, uint8_t ink_c) {
+    const int x = g->box[0], y = g->box[1], w = g->box[2];
+    const int scale = (g->p[0] & 0xFF) ? (g->p[0] & 0xFF) : 2;
+    char num[8], l1[8], l2[8];
+    if (pace.level == WEEK_UNKNOWN) snprintf(num, sizeof(num), "--");
+    else snprintf(num, sizeof(num), "%d", (int)pace.used);
+    d->color = level_color(g, pal);
+    const int pct_x = x + w - 3;
+    draw_text(layer, clip, d, pct_x - scale - text_w(num, scale), y, num, scale);
+    draw_text(layer, clip, d, pct_x, y + 5 * scale - 5, "%", 1);
+    burndown_verdict(&pace, l1, l2);
+    d->color = lv_color_hex(pal[ink_c]);
+    draw_text(layer, clip, d, x, y, l1, 1);
+    draw_text(layer, clip, d, x, y + 6, l2, 1);
 }
 
 static void draw_cb(lv_event_t* e) {
@@ -308,6 +393,10 @@ static void draw_cb(lv_event_t* e) {
             }
             if (g->type == SG_CHART) {
                 draw_chart(layer, &clip, &d, g, pal, r.c);
+                continue;
+            }
+            if (g->type == SG_WEEKNUM) {
+                draw_week_text(layer, &clip, &d, g, pal, r.c);
                 continue;
             }
         }
@@ -540,19 +629,24 @@ void scene_tick(uint32_t now, int minute_of_day) {
     }
 }
 
-void scene_set_live(int countdown_mins, const Burndown* wk, int now_slot) {
+void scene_set_live(int countdown_mins, const Burndown* wk, int used_pct, int left_mins) {
     if (countdown_mins < 0) countdown_mins = -1;
     if (countdown_mins != countdown) {
         countdown = countdown_mins;
         invalidate_live(SG_DIGITS, false);
     }
-    if (!wk || now_slot < 0 || now_slot >= BURNDOWN_SLOTS) now_slot = -1;
+    if (used_pct < 0 || left_mins < 0) used_pct = left_mins = -1;
+    if (used_pct > 100) used_pct = 100;
     const uint16_t rev = wk ? wk->rev : 0;
-    if (wk != week || now_slot != week_now || rev != week_rev) {
+    // The poster redraws when a sample lands or a minute passes (~50x50 px).
+    if (wk != week || rev != week_rev || used_pct != week_used || left_mins != week_left) {
         week = wk;
-        week_now = now_slot;
         week_rev = rev;
+        week_used = used_pct;
+        week_left = left_mins;
+        burndown_pace(&pace, used_pct, left_mins);
         invalidate_live(SG_CHART, false);
+        invalidate_live(SG_WEEKNUM, false);
     }
 }
 

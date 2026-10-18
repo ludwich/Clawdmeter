@@ -16,8 +16,8 @@ rectangle names a palette INDEX; the palette has a day, dusk and night
 variant, so the whole scene re-colours by the real local time. Rectangles
 can belong to one group: a drift (clouds sliding by and wrapping), a frame of
 a cycling animation (twinkle, steam, blink), a clock (hands at the real
-time), an LED countdown (time left in the 5-hour window) or a chart (the
-weekly burndown). Clawd is never drawn here: the previews composite his official frames
+time), an LED countdown (time left in the 5-hour window), or the weekly
+poster's live parts (a burn-up chart and the % used with a verdict). Clawd is never drawn here: the previews composite his official frames
 from firmware/src/splash_animations.h exactly where stage.cpp puts them.
 """
 import argparse
@@ -35,8 +35,8 @@ BODY_OX, BODY_W = 15, 24              # the idle body on the 55x37 art stage
 TODS = ("day", "dusk", "night")
 TOD_BIT = {"day": 1, "dusk": 2, "night": 4}
 ALL = 7
-G_STATIC, G_DRIFT, G_FRAME, G_CLOCK, G_DIGITS, G_CHART = 0, 1, 2, 3, 4, 5
-G_LIVE = (G_CLOCK, G_DIGITS, G_CHART)   # drawn by the engine in their slot; box set by hand
+G_STATIC, G_DRIFT, G_FRAME, G_CLOCK, G_DIGITS, G_CHART, G_WEEKNUM = 0, 1, 2, 3, 4, 5, 6
+G_LIVE = (G_CLOCK, G_DIGITS, G_CHART, G_WEEKNUM)   # drawn by the engine in their slot; box set by hand
 MAX_GROUPS = 48                       # scene.cpp SCENE_MAX_GROUPS
 MIN_PERIOD_MS = 100                   # animated updates at most ~10 Hz
 ANCHORS = ("DESK", "SIGN")            # scene_data.h SceneAnchorId, in order
@@ -89,6 +89,12 @@ FONT_W, FONT_H = 3, 5
 SEG7 = (0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F, 0x40)
 SEG_DASH = 10
 WEEK_SLOTS = 168                      # burndown.h BURNDOWN_SLOTS: hours in the weekly window
+WEEK_MINS = 7 * 24 * 60               # burndown.h BURNDOWN_WEEK_MINS
+# burndown.h: pace grace, red from, red when out this early, no projection before.
+GRACE_PCT, RED_PCT, OUT_MARGIN, PROJECT_MINS = 1, 90, 24 * 60, 12 * 60
+WEEK_UNKNOWN, WEEK_ON, WEEK_AHEAD, WEEK_OUT = 0, 1, 2, 3
+# The glyphs scene.cpp GLYPHS carries for the poster's live text.
+LIVE_GLYPHS = "0123456789%+-<ABCDEHINOPTUW "
 
 
 def seg_rects(x, y, dw, dh, t, mask):
@@ -117,16 +123,98 @@ def countdown_glyphs(mins):
     return (h, mins % 60 // 10, mins % 10)
 
 
-def week_column(week, col, cols, now_slot):
-    """burndown.cpp burndown_column(): the latest % used in the column, None when none."""
-    if week is None or now_slot is None or now_slot < 0:
+def div_round(a, b):
+    """burndown.cpp div_round(): a / b rounded half away from zero (b > 0)."""
+    return (a + b // 2) // b if a >= 0 else -((-a + b // 2) // b)
+
+
+def week_pace(used, wr):
+    """burndown.cpp burndown_pace(): dict(level, used, elapsed, delta, out_in)."""
+    p = dict(level=WEEK_UNKNOWN, used=-1, elapsed=-1, delta=0, out_in=-1)
+    if used is None or wr is None or used < 0 or wr < 0:
+        return p
+    used = min(100, used)
+    e = max(0, WEEK_MINS - wr)
+    p.update(used=used, elapsed=e)
+    ahead = used * WEEK_MINS - 100 * e
+    p["delta"] = div_round(ahead, WEEK_MINS)
+    if used >= 100:
+        p.update(level=WEEK_OUT, out_in=0)
+        return p
+    if ahead <= GRACE_PCT * WEEK_MINS:
+        p["level"] = WEEK_OUT if used >= RED_PCT else WEEK_ON
+        return p
+    p["level"] = WEEK_AHEAD
+    if e >= PROJECT_MINS:
+        t_out = e * 100 // used
+        if t_out < WEEK_MINS:
+            p["out_in"] = t_out - e
+            if WEEK_MINS - t_out >= OUT_MARGIN:
+                p["level"] = WEEK_OUT
+    if used >= RED_PCT:
+        p["level"] = WEEK_OUT
+    return p
+
+
+def week_verdict(p):
+    """burndown.cpp burndown_verdict(): the two lines beside the number."""
+    if p["level"] == WEEK_UNKNOWN:
+        return "", ""
+    if p["out_in"] == 0:
+        return "OUT", "NOW"
+    if p["level"] == WEEK_OUT and p["out_in"] > 0:
+        m = p["out_in"]
+        return "OUT", (f"{m // 1440}D" if m >= 1440 else f"{m // 60}H" if m >= 60 else "<1H")
+    if p["level"] == WEEK_AHEAD or p["delta"] > GRACE_PCT:
+        return f"+{p['delta']}", "AHEAD"
+    if p["delta"] < -GRACE_PCT:
+        return f"{p['delta']}", "BEHIND"
+    return "ON", "PACE"
+
+
+def week_used_at(week, p, t):
+    """burndown.cpp burndown_used_at(): % used t minutes in, straight lines
+    between the real points (0 at the start, recorded slots before this hour
+    at their half hour, `used` now); None outside 0..elapsed."""
+    if p["level"] == WEEK_UNKNOWN or t < 0 or t > p["elapsed"]:
         return None
-    s0 = col * WEEK_SLOTS // cols
-    s1 = min((col + 1) * WEEK_SLOTS // cols, now_slot + 1)
-    for s in range(s1 - 1, s0 - 1, -1):
-        if week[s] is not None:
-            return week[s]
-    return None
+    e = p["elapsed"]
+    if t == e:
+        return p["used"]
+    lim = min(e // 60, WEEK_SLOTS)
+    t0, v0, t1, v1 = 0, 0, e, p["used"]
+    k = min(t // 60, lim - 1)
+    if week is not None:
+        j = k
+        while j >= 0:
+            if week[j] is not None and j * 60 + 30 <= t:
+                t0, v0 = j * 60 + 30, week[j]
+                break
+            j -= 1
+        for n in range(max(0, j + 1), lim):
+            if week[n] is not None and n * 60 + 30 > t:
+                t1, v1 = n * 60 + 30, week[n]
+                break
+    if t1 <= t0:
+        return v1
+    return v0 + div_round((v1 - v0) * (t - t0), t1 - t0)
+
+
+def week_projected_at(p, t):
+    """burndown.cpp burndown_projected_at(): the average rate at t, clipped at 100."""
+    if p["level"] == WEEK_UNKNOWN or p["elapsed"] < PROJECT_MINS or t < p["elapsed"]:
+        return None
+    return min(100, div_round(p["used"] * t, p["elapsed"]))
+
+
+def chart_row(pct, h):
+    """scene.cpp row_of(): 100 % on the plot's top row, 0 % on the bottom."""
+    return (h - 1) - (pct * (h - 1) + 50) // 100
+
+
+def chart_col_mid(c, w):
+    """scene.cpp col_mid(): the minute at the middle of plot column c of w."""
+    return (2 * c + 1) * WEEK_MINS // (2 * w)
 
 
 def text_width(s, scale=1):
@@ -411,25 +499,43 @@ class Scene:
         self.rects.append([x, y, width, dh, lit_c, self._tod, gid])
         return width
 
-    def chart(self, x, y, w, h, line_c, area_c, now_c, ghost_c=None, cell=2):
-        """The live weekly burndown in the plot area x, y, w x h: a column of
-        `cell` px per WEEK_SLOTS / (w / cell) hours, filled up to the weekly
-        usage left (`area_c`, its top cell `line_c`), and a dashed "now" line
-        (`now_c`). A column without data (the device saw nothing then) is a
-        dither in `ghost_c` at the last known level (empty before the first
-        sample, or without `ghost_c`). The axes and the ideal pace line are
-        ordinary shapes the scene draws around it."""
-        if w % cell or h % cell or WEEK_SLOTS % (w // cell):
-            raise ValueError(f"chart {w}x{h}: whole cells, and columns dividing {WEEK_SLOTS} hours")
-        if not 0 < cell < 256:
-            raise ValueError(f"chart cell {cell}")
-        # p[0] packs the cell size (low byte) and the ghost colour + 1 (high byte, 0 = none).
-        ghost = 0 if ghost_c is None else ghost_c + 1
-        if ghost > 127:
-            raise ValueError("chart ghost colour index too high for p[0]")
-        gid = self._new_group(dict(type=G_CHART, p=(cell | ghost << 8, area_c, now_c)))
+    @staticmethod
+    def _pack(lo, hi):
+        """Two palette indices in one int16 p (scene.cpp unpacks lo | hi << 8)."""
+        if not (0 <= lo < 256 and 0 <= hi < 128):
+            raise ValueError(f"colour indices {lo}, {hi} don't pack into an int16")
+        return lo | hi << 8
+
+    def week_chart(self, x, y, w, h, line_c, area_c, now_c, levels):
+        """The weekly poster's live burn-up in the plot area x, y, w x h (1 px
+        per column, w columns over the 7-day window, 0 % on the bottom row and
+        100 % on the top): the % used so far, straight lines between real
+        points only, as a line (`line_c`) over a fill (`area_c`); a dashed now
+        marker (`now_c`) above it; and the average rate dotted on to the reset
+        in the level colour, clipped at 100 % with a mark where it runs out.
+        `levels` = (on pace, ahead, out, unknown) colours. Nothing is drawn
+        while the week is unknown. Axes, ticks and the even-pace line are
+        plain shapes around it (shapes after it draw on top)."""
+        if w < 2 or h < 2:
+            raise ValueError(f"chart {w}x{h}")
+        ok, ahead, out, unk = levels
+        gid = self._new_group(dict(type=G_CHART, p=(self._pack(area_c, now_c), self._pack(ok, ahead),
+                                                    self._pack(out, unk))))
         self.groups[gid]["box"] = (x, y, w, h)
         self.rects.append([x, y, w, h, line_c, self._tod, gid])
+
+    def week_number(self, x, y, w, ink_c, levels, scale=2):
+        """The weekly poster's live text in x..x+w from y: the weekly % used
+        (`--` when unknown) right-aligned in the 3x5 font at `scale` with a 1x
+        `%` on its baseline, in the
+        level colour of `levels` = (on pace, ahead, out, unknown), and the
+        verdict's two 3x5 lines at the left in `ink_c` (`+6`/`AHEAD`,
+        `-4`/`BEHIND`, `ON`/`PACE`, `OUT`/`2D`, `OUT`/`NOW`)."""
+        ok, ahead, out, unk = levels
+        h = max(5 * scale, 11)
+        gid = self._new_group(dict(type=G_WEEKNUM, p=(scale, self._pack(ok, ahead), self._pack(out, unk))))
+        self.groups[gid]["box"] = (x, y, w, h)
+        self.rects.append([x, y, w, h, ink_c, self._tod, gid])
 
     def anchor(self, name, x, y=0, w=0, h=0):
         """A named point/area the engine reads: DESK (x = Clawd's body-left at the
@@ -563,7 +669,10 @@ def emit_header(s):
             note = "LED countdown H:MM"
         elif t == G_CHART:
             p, nk = g["p"], (0, 0)
-            note = "weekly burndown chart"
+            note = "weekly burn-up chart"
+        elif t == G_WEEKNUM:
+            p, nk = g["p"], (0, 0)
+            note = "weekly % used and verdict"
         else:
             p, nk = (0, 0, 0), (0, 0)
             note = "static"
@@ -639,54 +748,101 @@ def digits_blocks(g, x, y, mins, t_ms):
     return out
 
 
-def chart_blocks(g, x, y, w, h, week, now_slot):
-    """scene.cpp draw_chart(): (x, y, w, h, which), which 0 = area, 1 = its
-    top cell (the line), 2 = the now marker, 3 = a no-data column's dither."""
-    cell, ghost = g["p"][0] & 255, g["p"][0] >> 8
-    cols, rows = w // cell, h // cell
+def chart_blocks(g, x, y, w, h, week, p):
+    """scene.cpp draw_chart(): (x, y, w, h, which), which 0 = area, 1 = line,
+    2 = the now marker, 3 = the projection and its run-out mark."""
     out = []
-    if now_slot is None or now_slot < 0:
+    if p["level"] == WEEK_UNKNOWN:
         return out
-    nc = min(cols - 1, now_slot * cols // WEEK_SLOTS)
-    for r in range(0, rows, 2):                            # dashed, from the top
-        out.append((x + nc * cell, y + r * cell, cell, cell, 2))
-    last_hc = None                                         # the last known height
-    for c in range(min(cols, nc + 1)):
-        used = week_column(week, c, cols, now_slot)
-        if used is None:
-            if ghost and last_hc:                          # carried forward, dithered
-                for r in range(rows - last_hc, rows, 2):
-                    out.append((x + c * cell, y + r * cell, cell, cell, 3))
+    e = p["elapsed"]
+    nc = min(w - 1, e * w // WEEK_MINS)
+    for r in range(0, chart_row(p["used"], h) - 1, 2):
+        out.append((x + nc, y + r, 1, 1, 2))
+    prev = -1
+    for c in range(nc + 1):
+        v = week_used_at(week, p, e if c == nc else chart_col_mid(c, w))
+        if v is None:
             continue
-        left = 100 - used
-        hc = (left * rows + 50) // 100
-        if left > 0 and hc == 0:
-            hc = 1
-        last_hc = hc
-        if hc <= 0:
-            continue
-        top = y + h - hc * cell
-        out.append((x + c * cell, top, cell, cell, 1))
-        if hc > 1:
-            out.append((x + c * cell, top + cell, cell, (hc - 1) * cell, 0))
+        top = chart_row(v, h)
+        lo = hi = top
+        if prev > top + 1:
+            hi = prev - 1
+        elif prev >= 0 and prev < top - 1:
+            lo = prev + 1
+        out.append((x + c, y + lo, 1, hi - lo + 1, 1))
+        if hi < h - 1:
+            out.append((x + c, y + hi + 1, 1, h - 1 - hi, 0))
+        prev = top
+    hit = False
+    for c in range(nc + 1, w):
+        v = week_projected_at(p, chart_col_mid(c, w))
+        if v is None:
+            break
+        if (c - nc) % 2 == 0:
+            out.append((x + c, y + chart_row(v, h), 1, 1, 3))
+        if v >= 100 and not hit:
+            hit = True
+            out.append((x + min(c, w - 2), y, 2, 3, 3))
     return out
 
 
-def synthetic_week(now_slot=110, start_hour=8):
-    """A believable week of weekly % used per hour slot up to `now_slot`: use
-    climbs in working hours (more mid-week), a little in the evening, nothing
-    overnight, and the device was off for a stretch (slots 52..63 hold no
-    data). The window started at `start_hour` local time."""
-    used, week = 0.0, [None] * WEEK_SLOTS
-    for s in range(now_slot + 1):
+def text_blocks(x, y, s, scale=1):
+    """scene.cpp draw_text(): the 3x5 font's lit cells as (x, y, w, h)."""
+    out = []
+    for i, ch in enumerate(s):
+        if ch not in LIVE_GLYPHS:
+            raise ValueError(f"scene.cpp has no live glyph for {ch!r}")
+        for r, bits in enumerate(FONT[ch]):
+            for c, b in enumerate(bits):
+                if b == "#":
+                    out.append((x + i * 4 * scale + c * scale, y + r * scale, scale, scale))
+    return out
+
+
+def week_text_blocks(g, x, y, w, p):
+    """scene.cpp draw_week_text(): (x, y, w, h, which), which 0 = the number
+    (level colour), 1 = the verdict (ink)."""
+    scale = g["p"][0] & 255 or 2
+    num = "--" if p["level"] == WEEK_UNKNOWN else str(p["used"])
+    pct_x = x + w - 3                                      # a 1x "%" on the number's baseline
+    out = [b + (0,) for b in text_blocks(pct_x - scale - text_width(num, scale), y, num, scale)]
+    out += [b + (0,) for b in text_blocks(pct_x, y + 5 * scale - 5, "%")]
+    l1, l2 = week_verdict(p)
+    out += [b + (1,) for b in text_blocks(x, y, l1)]
+    out += [b + (1,) for b in text_blocks(x, y + 6, l2)]
+    return out
+
+
+def level_index(g, p):
+    """scene.cpp level_color(): the palette index for the pace level."""
+    a, b = g["p"][1], g["p"][2]
+    return {WEEK_ON: a & 255, WEEK_AHEAD: a >> 8, WEEK_OUT: b & 255}.get(p["level"], b >> 8)
+
+
+def synthetic_week(used, wr, start_hour=8):
+    """A believable week of weekly % used per hour slot before now, ending
+    near `used` now: use climbs in working hours (more mid-week), a little in
+    the evening, nothing overnight, and the device was off for a stretch
+    (slots 52..63 hold no data). The window started at `start_hour` local
+    time. None when unknown."""
+    if used is None or used < 0 or wr is None or wr < 0:
+        return None
+    now_slot = max(0, WEEK_MINS - wr) // 60
+    raw, acc = [], 0.0
+    for s in range(now_slot):
         hour = (start_hour + s) % 24
         day = (start_hour + s) // 24
         if 9 <= hour < 18:
-            used += (1.0, 1.4, 1.6, 1.2, 0.9, 0.3, 0.2, 0.2)[min(day, 7)]
+            acc += (1.0, 1.4, 1.6, 1.2, 0.9, 0.3, 0.2, 0.2)[min(day, 7)]
         elif 20 <= hour < 23:
-            used += 0.5
+            acc += 0.5
+        raw.append(acc)
+    # Scaled so the curve runs on into `used` now (the last hour's share added).
+    total = (raw[-1] if raw else 0) + 0.6
+    week = [None] * WEEK_SLOTS
+    for s, v in enumerate(raw):
         if not 52 <= s < 64:
-            week[s] = min(100, int(round(used)))
+            week[s] = min(100, int(round(v * used / total)))
     return week
 
 
@@ -717,10 +873,15 @@ def render(s, tod="day", t_ms=0, minute=None, live=None):
                 fill(*r, pal[c])
             continue
         if g["type"] == G_CHART:
-            ghost = g["p"][0] >> 8
-            cols = (pal[g["p"][1]], pal[c], pal[g["p"][2]], pal[ghost - 1] if ghost else None)
-            for bx, by, bw, bh, which in chart_blocks(g, x, y, w, h, live.get("week"),
-                                                      live.get("now")):
+            p = live.get("pace") or week_pace(None, None)
+            cols = (pal[g["p"][0] & 255], pal[c], pal[g["p"][0] >> 8], pal[level_index(g, p)])
+            for bx, by, bw, bh, which in chart_blocks(g, x, y, w, h, live.get("week"), p):
+                fill(bx, by, bw, bh, cols[which])
+            continue
+        if g["type"] == G_WEEKNUM:
+            p = live.get("pace") or week_pace(None, None)
+            cols = (pal[level_index(g, p)], pal[c])
+            for bx, by, bw, bh, which in week_text_blocks(g, x, y, w, p):
                 fill(bx, by, bw, bh, cols[which])
             continue
         dx = drift_dx(g, t_ms) if g["type"] == G_DRIFT else 0
@@ -811,11 +972,22 @@ def cmd_preview(args):
     tods = TODS if (args.scene == "all" and not args.tod) else (args.tod or None,)
     outdir = args.outdir or PREVIEW_DIR
     sheet = []
-    now = args.week_now
-    week = {"synthetic": lambda: synthetic_week(now), "empty": lambda: [None] * WEEK_SLOTS,
-            "even": lambda: [min(100, s * 100 // (WEEK_SLOTS - 1)) for s in range(WEEK_SLOTS)],
-            "none": lambda: None}[args.week]()
-    live = dict(countdown=args.sr, week=week, now=None if args.week == "none" else now)
+    used = None if args.week == "none" or args.w < 0 else min(100, int(args.w + 0.5))
+    wr = None if args.week == "none" or args.wr < 0 else args.wr
+    pace = week_pace(used, wr)
+
+    def even():
+        e = pace["elapsed"]
+        return [None if s * 60 + 60 > e else div_round(used * (s * 60 + 30), e)
+                for s in range(WEEK_SLOTS)]
+
+    week = None
+    if pace["level"] != WEEK_UNKNOWN:
+        week = {"synthetic": lambda: synthetic_week(used, wr), "empty": lambda: None,
+                "even": even, "none": lambda: None}[args.week]()
+        print("week: %d%% used, %s, verdict %s" % (
+            used, ("?", "on pace", "ahead", "out")[pace["level"]], " ".join(week_verdict(pace))))
+    live = dict(countdown=args.sr, week=week, pace=pace)
     for n in names:
         s = load_scene(n)
         for tod in tods:
@@ -868,10 +1040,13 @@ def main(argv=None):
     pv.add_argument("--sr", type=int, default=161,
                     help="minutes left in the 5-hour window for the LED countdown (-1 = unknown)")
     pv.add_argument("--week", choices=("synthetic", "empty", "even", "none"), default="synthetic",
-                    help="the burndown chart's history: a made-up week, no data, an even "
-                         "burn, or no payload yet (nothing drawn, no now marker)")
-    pv.add_argument("--week-now", type=int, default=110,
-                    help=f"the chart's current hour slot 0..{WEEK_SLOTS - 1}")
+                    help="the weekly poster's recorded history: a made-up week (with a gap "
+                         "where the device was off), no samples (a straight line from the "
+                         "start), an even burn, or no payload yet (--%%, no chart)")
+    pv.add_argument("--w", type=float, default=34,
+                    help="weekly %% used now (`w`; -1 = unknown or spend-capped: --%%)")
+    pv.add_argument("--wr", type=int, default=5600,
+                    help=f"minutes to the weekly reset (`wr`, 0..{WEEK_MINS}; -1 = unknown)")
     pv.add_argument("--t", type=int, default=0, help="animation time in ms (drift, frames)")
     pv.add_argument("--clawd", choices=("idle", "laptop", "none"),
                     help="Clawd's pose (default: laptop in the office, idle outside)")

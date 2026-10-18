@@ -370,7 +370,7 @@ at y 162), in front of pixel-art scenery (`scene.cpp`) that says where he is:
   counts down to the next 5-hour window (H:MM, from `sr` and the minutes
   since that payload; colon blinking; `-:--` when the window hasn't started,
   is unknown or ran out, and always on spend-capped accounts) and a framed
-  poster charts this week's usage burning down (below). He sits at his desk spot (the scene's `DESK` anchor, facing
+  poster shows this week's usage (below). He sits at his desk spot (the scene's `DESK` anchor, facing
   right) and plays the official laptop act, typing in its loop until the
   work stops.
 - **Outside** while he plays: sky, sun or moon, drifting clouds, grass. He
@@ -378,23 +378,45 @@ at y 162), in front of pixel-art scenery (`scene.cpp`) that says where he is:
   with his balls, picked at random with a still pause between that shortens
   as usage gets busier.
 
-The burndown poster: x is the weekly window (reset minus 7 days to the
-reset, a tick per day), y the weekly usage left (100 % − `w`). Faint dots
-trace the even pace from full to empty; teal columns (one per 8 hours, the
-latest sample in each) show what was actually left, and a dashed red line
-marks now. The device has no history before it boots, so it records one:
-`burndown.cpp` (pure, `test/test_burndown`) keeps the weekly % used per hour
-slot of the window (168 bytes, `0xFF` = no data) from real samples only
-(`ok && !rp`, Pro/Max), placed by `wr` and told apart by the reset time on
-the app's clock (`t` / 60 + `wr`). A reset more than 6 hours from the
+The weekly poster (56×48 px, between the lamp and the LED display):
+
+- **The number**, top right: the weekly % used now (`w`, rounded), digits
+  in the 3×5 font at 2× (10 px tall) with a small `%`. Its colour follows
+  the pace like the meters' pace marker: green at or behind the even pace
+  (the elapsed share of the 7-day window, `(10080 − wr) / 10080`, within a
+  point counts as on it), amber ahead, red from 90 %, at the limit, or when
+  the average rate (used / elapsed) would run out a day or more before the
+  reset. `--` in grey when `w` or `wr` is unknown, and always on
+  spend-capped accounts.
+- **The verdict**, two 3×5 lines at the top left: `-13`/`BEHIND`,
+  `ON`/`PACE`, `+3`/`AHEAD` (points against the even pace), or, when red and
+  the average rate reaches 100 % before the reset, `OUT`/`2D` (days until
+  then; hours under a day, `<1H` under an hour), and `OUT`/`NOW` at the
+  limit. The run-out isn't projected in the window's first 12 hours.
+- **The burn-up**, below: x = the weekly window (reset − 7 days to the reset,
+  a tick per day, one px column per 4 hours), y = 0..100 % used. Faint dots
+  trace the even pace corner to corner. The % used so far is a teal fill
+  under a navy line built from real points only, joined by straight lines:
+  0 % at the window's start (a weekly window starts empty), each hour the
+  device recorded (at its half hour), and `w` now. A dashed line marks now,
+  and the average rate is dotted on from there to the reset in the number's
+  colour, clipped at 100 % with a mark where it gets there (when you'd run
+  out). With no recorded history the used part is one straight line from the
+  start to now, so the poster is useful from the first payload.
+
+The math is pure and tested (`burndown.cpp`: `burndown_pace`,
+`burndown_verdict`, `burndown_used_at`, `burndown_projected_at`;
+`test/test_burndown`); `scene.cpp` only draws it. The device has no history
+before it boots, so it records one: `burndown.cpp` keeps the weekly % used
+per hour slot of the window (168 bytes, `0xFF` = no data) from real samples
+only (`ok && !rp`, Pro/Max), placed by `wr` and told apart by the reset time
+on the app's clock (`t` / 60 + `wr`). A reset more than 6 hours from the
 recorded one, or weekly use dropping 10 points, starts a new window and
 clears it. `pages.cpp` saves it in NVS (namespace `clawdweek`) at most once
-an hour, so it survives reboots. Hours the device didn't see are never
-drawn as a value: before the first sample in the window the columns stay
-empty, and a gap after it is a faint dither at the last known level (carried
-forward, so it reads as "no data" rather than a drop). Nothing is drawn
-until a payload this boot places the window, and spend-capped accounts (no
-weekly window) get an empty chart.
+an hour, so it survives reboots, and hands it to the poster only once a
+payload this boot has placed the current window (before that the chart is
+the straight line). Hours the device didn't see are never drawn as values;
+the line just runs straight across them.
 
 Both scenes re-colour by the local time of day: night 21:00–05:59, dusk
 06:00–07:59 and 18:00–20:59, day otherwise (day when the app sends no clock).
@@ -418,8 +440,8 @@ Cost: the scenery is const data in flash (`scene_office.h`,
 `tools/README.md`) drawn by one full-screen LVGL object, so it costs a few
 hundred bytes of RAM (plus the 168-byte week). Animated bits invalidate only
 their own boxes, at most 10 Hz each; the countdown redraws once a minute (its
-colon twice a second), the chart when a sample lands or the hour moves on,
-and a time-of-day change once.
+colon twice a second), the poster's number and chart when a sample lands or
+a minute passes, and a time-of-day change once.
 
 QA on the serial console: `page 1` (the Clawd page), `work 1` / `work 0`
 (force Claude working or not; `work -1` = the real cue), `tod <minute>` (the
@@ -427,7 +449,7 @@ page's local time, e.g. `tod 1380` for night; `tod -1` = the real clock),
 `mood <bits>` (1 angry, 2 yelling, 0 = real). C6 has no `screenshot`, so
 check by eye. Scene previews with Clawd placed exactly as on the device:
 `python tools/scenes/scenekit.py preview all` (the live wall with fake data:
-`--sr`, `--week`, `--week-now`; `tools/README.md`).
+`--sr`, `--w`, `--wr`, `--week`; `tools/README.md`).
 
 ## Buttons
 
