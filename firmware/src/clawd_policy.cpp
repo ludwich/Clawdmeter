@@ -223,8 +223,13 @@ bool turn_on_event(TurnTracker* t, char event, uint32_t now, const ClawdTuning* 
     return false;
 }
 
-bool clawd_working(const TurnTracker* t, uint32_t now, int activity) {
-    if (t->in_turn) return (uint32_t)(now - t->prompt_at) < CLAWD_WORKING_TURN_MS;
+bool clawd_working(TurnTracker* t, uint32_t now, int activity) {
+    if (activity > 0) t->busy_at = now;
+    if (t->in_turn) {
+        uint32_t last = t->prompt_at;
+        if ((int32_t)(t->busy_at - last) > 0) last = t->busy_at;   // tools since the prompt
+        return (uint32_t)(now - last) < CLAWD_WORKING_TURN_MS;
+    }
     const bool just_stopped = t->stopped && (uint32_t)(now - t->stopped_at) < CLAWD_WORKING_STOP_MS;
     return activity > 0 && !just_stopped;
 }

@@ -89,6 +89,15 @@ static void test_working_while_a_turn_is_open_or_tools_run(void) {
     TEST_ASSERT_TRUE(clawd_working(&t, 15 * MIN, 1));            // tools well after it
 }
 
+static void test_long_agentic_turn_stays_working_while_tools_run(void) {
+    TurnTracker t; turn_clear(&t);
+    turn_on_event(&t, 'p', 0, &T);
+    TEST_ASSERT_TRUE(clawd_working(&t, 9 * MIN, 1));             // tools at 9 min
+    TEST_ASSERT_TRUE(clawd_working(&t, 15 * MIN, 0));            // a long build: quiet since 9
+    TEST_ASSERT_TRUE(clawd_working(&t, 30 * MIN, 1));            // still at it
+    TEST_ASSERT_FALSE(clawd_working(&t, 41 * MIN, 0));           // 11 quiet minutes, no Stop
+}
+
 static void test_pick_never_repeats(void) {
     static const char* const acts[] = { "dancing", "waving", "dancing", "lurking" };
     ClawdRng r; clawd_rng_seed(&r, 42);
@@ -401,6 +410,7 @@ int main(int, char**) {
     RUN_TEST(test_engagement_wraps_safely);
     RUN_TEST(test_long_turn_earns_a_wave);
     RUN_TEST(test_working_while_a_turn_is_open_or_tools_run);
+    RUN_TEST(test_long_agentic_turn_stays_working_while_tools_run);
     RUN_TEST(test_pick_never_repeats);
     RUN_TEST(test_jitter_stays_within_40_percent);
     RUN_TEST(test_face_rhythm_is_irregular_with_some_double_blinks);
