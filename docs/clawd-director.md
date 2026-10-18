@@ -213,7 +213,11 @@ such room (the seat would land in the first panel), so there `mascot_act`
 swaps any act taller than the headroom for dancing (17 cells) rather than clip
 him. On a wide, short panel (the console layout, 320×172) the seat is on the
 rail floor at the bottom, so the whole height is headroom: the jump's apex is
-at y 26 and no act is swapped.
+at y 26 and no act is swapped. The clock sits top-left in that air, over the
+seat (every act starts at the seat's left edge, so the jump rises under the
+clock's own x-span): `layout.cpp` keeps it at y 8 where the apex leaves
+room, else moves it up to clear the apex by a pixel (y 4 on 320×172, the
+20 px line ending at y 25).
 
 **Engagement** resets the screensaver clock. Engagement is any fired hook
 event, any activity level above 0 (tool calls are hook events too), a tap, a
@@ -353,7 +357,9 @@ a board capability, with no NVS override, desktop setting, or serial toggle.
   cells (96×72 idle) on the rail floor along the bottom, seat at x 12, feet
   on y 146, with the whole height as headroom (jumping happy's apex at y 26,
   no tall-act swap). The laptop act (136×92) stays inside x 12..148, left of
-  the instrument column; the status line sits to his right in the rail. His
+  the instrument column; the clock and the battery sit top-left above his
+  head (clock at y 4, under the jump's apex); the status line sits to his
+  right in the rail, sharing the column's edges (x 154..310). His
   buffer is 37.5 KB of internal RAM (the laptop at 4 px); if that allocation
   fails `ui.cpp` retries at 3 px (21 KB, seat moved in to x 24), and failing
   that stands the still Clawd there. On the LCD-1.47 the 4 px buffer

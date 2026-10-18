@@ -125,9 +125,10 @@ static bool inside(Box a, Box b) {   // a inside b
 }
 
 // The console (side_by_side): Clawd on the rail, the rows in a column to
-// his right, the clock, battery and status line in the rail.
+// his right, the clock and the battery top-left above him, the status line
+// in the rail under the column.
 static void check_console(const Panel& p) {
-    const Box column = { L.status_x, 0, L.status_w, L.rail.y };
+    const Box column = { L.card[0].x, 0, L.card[0].w, L.rail.y };
     if (L.rail.y + L.rail.h != p.h || L.rail.x != 0 || L.rail.w != p.w) fail("rail", rail());
     if (!(L.clawd_cell >= 2 && L.clawd_cell <= 4)) fail("Clawd cell", { 0, 0, L.clawd_cell, 0 });
 
@@ -162,19 +163,34 @@ static void check_console(const Panel& p) {
     if (L.bar_y + L.bar_h > L.reset_y) fail("bar vs reset line", card(0));
     if (L.reset_y + ink_h(L.reset_font) > L.card[0].h) fail("reset line vs row bottom", card(0));
 
-    // The rail: the clock's widest string, then the battery, left of the
-    // column; the status line under the column.
+    // The clock's widest string top-left, then the battery: on the glass,
+    // above the rail, left of the column, clear of every act at the seat
+    // (jumping happy's apex included).
     for (title_fmt = 0; title_fmt < 2; title_fmt++) {
         const lv_font_t* f = L.title_font[title_fmt];
         if (!f) fail("console without a clock", rail());
         const int w = widest_clock(f, title_fmt == 1);
         const Box t = { L.title_x, L.title_y[title_fmt], w, line_h(f) };
-        if (!inside(t, rail())) fail("clock outside the rail", t);
+        check_on_glass("clock", t);
+        if (t.y + t.h > L.rail.y) fail("clock vs rail", t);
         check_apart("clock vs battery", t, battery());
         check_apart("clock vs column", t, column);
+        for (const Act& a : CORNER_ACTS) {
+            const Box b = { L.seat_x, L.seat_feet_y - a.h * L.clawd_cell, a.w * L.clawd_cell, a.h * L.clawd_cell };
+            check_apart(a.name, t, b);
+        }
     }
-    if (!inside(battery(), rail())) fail("battery outside the rail", battery());
-    if (battery().x + battery().w > L.status_x) fail("battery vs status line", battery());
+    check_on_glass("battery", battery());
+    if (battery().y + battery().h > L.rail.y) fail("battery vs rail", battery());
+    check_apart("battery vs column", battery(), column);
+    for (const Act& a : CORNER_ACTS) {
+        const Box b = { L.seat_x, L.seat_feet_y - a.h * L.clawd_cell, a.w * L.clawd_cell, a.h * L.clawd_cell };
+        check_apart(a.name, battery(), b);
+    }
+
+    // The status line: in the rail, under the column and no wider.
+    const Box status = { L.status_x, 0, L.status_w, L.rail.y };
+    if (!inside(status, column)) fail("status line vs column", status);
     for (const char* s : STATUS_TEXT_REQUIRED) {
         const int w = text_w(L.status_font, s), lh = line_h(L.status_font);
         const Box b = { L.status_x, p.h + L.status_y - lh, w, lh };
@@ -182,7 +198,11 @@ static void check_console(const Panel& p) {
         if (!inside(b, rail())) fail("status line outside the rail", b);
     }
 
-    // The pairing hint: centred in the column, above the rail.
+    // The pairing hint: centred on the column, above the rail, on the
+    // glass and clear of every act.
+    const Box hint = { L.pair_x, 0, L.pair_w, L.rail.y };
+    const int off_centre = (L.pair_x + L.pair_w / 2) - (L.card[0].x + L.card[0].w / 2);
+    if (off_centre < -1 || off_centre > 1) fail("pairing hint off the column's centre", hint);
     static const char* const* const SETS[] = { PAIR_TEXT_PWR, PAIR_TEXT_TOUCH, PAIR_TEXT_CLEARED };
     for (const char* const* set : SETS) {
         Box prev = { 0, 0, 0, 0 };
@@ -192,12 +212,17 @@ static void check_console(const Panel& p) {
             int w = text_w(f, s);
             int lines = 1;
             if (w > L.pair_w) {
-                if (!L.pair_wrap) fail(s, { L.status_x, L.pair_y + L.pair_line_y[i], w, 0 });
+                if (!L.pair_wrap) fail(s, { L.pair_x, L.pair_y + L.pair_line_y[i], w, 0 });
                 lines = wrapped_lines(f, s, L.pair_w);
                 w = L.pair_w;
             }
-            const Box b = { L.status_x + (L.pair_w - w) / 2, L.pair_y + L.pair_line_y[i], w, lines * line_h(f) };
-            if (!inside(b, column)) fail(s, b);
+            const Box b = { L.pair_x + (L.pair_w - w) / 2, L.pair_y + L.pair_line_y[i], w, lines * line_h(f) };
+            check_on_glass(s, b);
+            if (!inside(b, hint)) fail(s, b);
+            for (const Act& a : CORNER_ACTS) {
+                const Box act = { L.seat_x, L.seat_feet_y - a.h * L.clawd_cell, a.w * L.clawd_cell, a.h * L.clawd_cell };
+                check_apart(a.name, b, act);
+            }
             if (i) check_apart("pairing lines", prev, b);
             prev = b;
         }
@@ -341,11 +366,11 @@ static void test_console_320x172(void) {
     TEST_ASSERT_EQUAL_INT16(12, L.seat_x);     TEST_ASSERT_EQUAL_INT16(146, L.seat_feet_y);
     TEST_ASSERT_EQUAL_INT16(0, L.rail.x);      TEST_ASSERT_EQUAL_INT16(146, L.rail.y);
     TEST_ASSERT_EQUAL_INT16(320, L.rail.w);    TEST_ASSERT_EQUAL_INT16(26, L.rail.h);
-    TEST_ASSERT_EQUAL_INT16(154, L.card[0].x); TEST_ASSERT_EQUAL_INT16(6, L.card[0].y);
+    TEST_ASSERT_EQUAL_INT16(154, L.card[0].x); TEST_ASSERT_EQUAL_INT16(8, L.card[0].y);
     TEST_ASSERT_EQUAL_INT16(156, L.card[0].w); TEST_ASSERT_EQUAL_INT16(62, L.card[0].h);
-    TEST_ASSERT_EQUAL_INT16(154, L.card[1].x); TEST_ASSERT_EQUAL_INT16(74, L.card[1].y);
+    TEST_ASSERT_EQUAL_INT16(154, L.card[1].x); TEST_ASSERT_EQUAL_INT16(76, L.card[1].y);
     TEST_ASSERT_EQUAL_INT16(0, L.pad_x);       TEST_ASSERT_EQUAL_INT16(0, L.pad_y);
-    TEST_ASSERT_EQUAL_INT16(32, L.bar_y);      TEST_ASSERT_EQUAL_INT16(12, L.bar_h);
+    TEST_ASSERT_EQUAL_INT16(30, L.bar_y);      TEST_ASSERT_EQUAL_INT16(12, L.bar_h);
     TEST_ASSERT_EQUAL_INT16(47, L.reset_y);
     TEST_ASSERT_EQUAL_PTR(&font_styrene_28, L.pct_font);
     TEST_ASSERT_EQUAL_PTR(&font_tiempos_34, L.ent_pct_font);
@@ -356,14 +381,19 @@ static void test_console_320x172(void) {
     TEST_ASSERT_TRUE(L.small_icons);
     TEST_ASSERT_EQUAL_PTR(&font_styrene_20, L.title_font[0]);
     TEST_ASSERT_EQUAL_PTR(&font_styrene_20, L.title_font[1]);
-    TEST_ASSERT_EQUAL_INT16(12, L.title_x);    TEST_ASSERT_EQUAL_INT16(149, L.title_y[0]);
-    TEST_ASSERT_EQUAL_INT16(112, L.batt_x);    TEST_ASSERT_EQUAL_INT16(147, L.batt_y);
+    // The clock top-left: jumping happy's apex (y 26) reaches an 8 px-deep
+    // clock line, so it sits at y 4 and clears the apex by a pixel.
+    TEST_ASSERT_EQUAL_INT16(12, L.title_x);    TEST_ASSERT_EQUAL_INT16(4, L.title_y[0]);
+    TEST_ASSERT_EQUAL_INT16(4, L.title_y[1]);
+    TEST_ASSERT_EQUAL_INT16(112, L.batt_x);    TEST_ASSERT_EQUAL_INT16(5, L.batt_y);
     TEST_ASSERT_EQUAL_PTR(&font_mono_18, L.status_font);
-    TEST_ASSERT_EQUAL_INT16(148, L.status_x);  TEST_ASSERT_EQUAL_INT16(168, L.status_w);
+    // The status line shares the column's edges (x 154..310).
+    TEST_ASSERT_EQUAL_INT16(154, L.status_x);  TEST_ASSERT_EQUAL_INT16(156, L.status_w);
     TEST_ASSERT_EQUAL_INT16(-3, L.status_y);
     TEST_ASSERT_EQUAL_PTR(&font_styrene_20, L.pair_font[0]);
     TEST_ASSERT_EQUAL_PTR(&font_styrene_12, L.pair_font[1]);
-    TEST_ASSERT_EQUAL_INT16(0, L.pair_y);      TEST_ASSERT_EQUAL_INT16(168, L.pair_w);
+    TEST_ASSERT_EQUAL_INT16(0, L.pair_y);      TEST_ASSERT_EQUAL_INT16(162, L.pair_w);
+    TEST_ASSERT_EQUAL_INT16(151, L.pair_x);    // centred on the column, 3 px wider each side
     TEST_ASSERT_FALSE(L.pair_wrap);
     TEST_ASSERT_EQUAL_INT16(24, L.pair_line_y[0]);
     TEST_ASSERT_EQUAL_INT16(104, L.pair_line_y[3]);

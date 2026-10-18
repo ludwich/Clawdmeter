@@ -407,9 +407,9 @@ static lv_obj_t* make_pair_line(int i, lv_color_t color) {
 
 static void build_pair_group(lv_obj_t* parent) {
     pair_group = lv_obj_create(parent);
-    if (L.side_by_side) {   // the column above the rail; its lines centre in it
+    if (L.side_by_side) {   // centred on the column, above the rail
         lv_obj_set_size(pair_group, L.pair_w, L.rail.y - L.pair_y);
-        lv_obj_set_pos(pair_group, L.status_x, L.pair_y);
+        lv_obj_set_pos(pair_group, L.pair_x, L.pair_y);
     } else {
         lv_obj_set_size(pair_group, L.w, L.h - L.pair_y);
         lv_obj_set_pos(pair_group, 0, L.pair_y);
@@ -448,13 +448,14 @@ static void apply_title_font(void) {
         return;
     }
     lv_obj_set_style_text_font(lbl_title, f, 0);
-    if (L.side_by_side) lv_obj_set_pos(lbl_title, L.title_x, L.title_y[fmt]);   // in the rail, left
+    if (L.side_by_side) lv_obj_set_pos(lbl_title, L.title_x, L.title_y[fmt]);   // top-left, above Clawd
     else                lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, L.title_cx - L.w / 2, L.title_y[fmt]);
     lv_obj_clear_flag(lbl_title, LV_OBJ_FLAG_HIDDEN);
 }
 
 // The console's rail: a band along the bottom that Clawd stands on, with a
-// lighter line along its top edge (the floor). Created first, under
+// floor line along its top edge, the dim text colour at 40 % so it reads
+// on an IPS panel (the bar-track grey didn't). Created first, under
 // everything else.
 static void build_rail(lv_obj_t* scr) {
     lv_obj_t* rail = lv_obj_create(scr);
@@ -468,8 +469,8 @@ static void build_rail(lv_obj_t* scr) {
     lv_obj_remove_style_all(edge);
     lv_obj_set_pos(edge, L.rail.x, L.rail.y);
     lv_obj_set_size(edge, L.rail.w, 1);
-    lv_obj_set_style_bg_color(edge, COL_BAR_BG, 0);
-    lv_obj_set_style_bg_opa(edge, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(edge, COL_DIM, 0);
+    lv_obj_set_style_bg_opa(edge, LV_OPA_40, 0);
     lv_obj_clear_flag(edge, LV_OBJ_FLAG_CLICKABLE);
 }
 
@@ -599,8 +600,9 @@ void ui_init(void) {
     if (L.side_by_side) {
         const ClawdAnim* laptop = clawd_anim("laptop");
         const ClawdAnim* jump = clawd_anim("jumping happy");
-        if ((laptop && laptop->w != LAYOUT_CORNER_ACT_W) || (jump && jump->h != LAYOUT_CORNER_ACT_H))
-            Serial.println("meters: LAYOUT_CORNER_ACT_W/H don't match the animations");
+        if ((laptop && laptop->w != LAYOUT_CORNER_ACT_W) || (jump && jump->h != LAYOUT_CORNER_ACT_H)
+            || (jump && jump->w != LAYOUT_CORNER_JUMP_W))
+            Serial.println("meters: LAYOUT_CORNER_ACT_W/H, JUMP_W don't match the animations");
         int cell = L.clawd_cell, seat_x = L.seat_x;
         // The jump clears the top edge from the rail on any panel 150 px or
         // taller; shorter, mascot_act plays a shorter act instead.

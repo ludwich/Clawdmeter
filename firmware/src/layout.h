@@ -62,8 +62,9 @@ struct Layout {
     // Pairing hint: four centred lines (heading, two steps, note), each
     // line_y below pair_y. Where a step is wider than pair_w the lines wrap
     // there (pair_wrap) and the lines under them sit lower to make room.
-    // Side by side: centred in the column (status_x .. status_x + pair_w).
+    // Side by side: centred on the column (pair_x .. pair_x + pair_w).
     int16_t pair_y, pair_w;
+    int16_t pair_x;                  // side by side only: the hint's left edge
     bool    pair_wrap;
     const lv_font_t* pair_font[4];
     int16_t pair_line_y[4];
@@ -72,10 +73,11 @@ struct Layout {
     // console. Clawd stands on a rail along the bottom, big, and the two
     // rows sit in a column to his right (card[0] / card[1], no background,
     // no padding: label top-left, percentage top-right, bar, reset line).
-    // The clock sits in the rail on the left (left-aligned at title_x), the
-    // battery after it, and the status line fills the rail under the column
-    // (left-aligned at status_x, status_w wide). The header fields above
-    // (logo_x/y, title_cx) are unused.
+    // The clock sits top-left above his head (left-aligned at title_x,
+    // under the jump's apex), the battery after it, and the status line
+    // fills the rail under the column, sharing its edges (left-aligned at
+    // status_x, status_w wide). The header fields above (logo_x/y,
+    // title_cx) are unused.
     bool       side_by_side;
     LayoutRect rail;                 // the rail: full width, along the bottom
     int8_t     clawd_cell;           // corner Clawd's cell size (px per art cell)
@@ -95,9 +97,11 @@ Layout layout_compute(const LayoutShape& shape);
 #define LAYOUT_BATT_W_SMALL     24
 // The corner Clawd's acts, in art cells (splash_animations.h; ui.cpp checks
 // them against the real animations): the widest (laptop) sets the console
-// column's left edge, the tallest (jumping happy) the seat's headroom.
+// column's left edge, the tallest (jumping happy) the seat's headroom and,
+// with its own width, where the clock may sit above the seat.
 #define LAYOUT_CORNER_ACT_W     34
 #define LAYOUT_CORNER_ACT_H     30
+#define LAYOUT_CORNER_JUMP_W    24
 
 // Pixel width of UTF-8 `text` in `font`, as LVGL draws it (kerning included).
 int32_t layout_text_width(const lv_font_t* font, const char* text);

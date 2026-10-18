@@ -452,16 +452,18 @@ static bool place_round(Layout& L, const Design& d, const Chrome** chrome) {
 // the rows go beside Clawd instead of under him. He stands on a rail along
 // the bottom, near page-size; the two rows sit in a column to his right in
 // the usage page's idiom (label left, percentage right, bar, reset line);
-// the rail holds the clock, the battery and the status line.
+// the clock and the battery sit top-left, in the air above his head; the
+// rail holds his feet and the status line, under the column.
 
 #define RAIL_H         26   // the rail: full width, along the bottom
 #define COL_GAP         6   // the column starts this far right of Clawd's widest act
-#define ROW_TOP         6   // first row's top edge
+#define ROW_TOP         8   // first row's top edge
 #define ROW_PITCH      68   // second row's top edge, below the first
-#define ROW_H          62   // label 14, percentage 30, bar at 32, reset line at 47
+#define ROW_H          62   // label 14, percentage 30, bar at 30, reset line at 47
 #define RIGHT_MARGIN   10   // the rows end this far from the right edge
 #define SEAT_X         12   // Clawd's seat, from the left edge
-#define STATUS_INSET    4   // status line's distance from the right edge
+#define TITLE_TOP       8   // the clock's top edge, where the jump leaves it room
+#define PAIR_INSET      4   // the pairing hint's lines may run this close to the right edge
 
 // The console's rows fit a column col_w wide: a label beside "100%", the
 // spend-capped number and its "%" beside "Spending", the widest reset line.
@@ -492,7 +494,7 @@ static void place_console(Layout& L) {
     // Row type and rhythm. No card background or padding: the column is
     // the card.
     L.pad_x = L.pad_y = 0;
-    L.bar_y = 32;  L.bar_h = 12;  L.reset_y = 47;
+    L.bar_y = 30;  L.bar_h = 12;  L.reset_y = 47;
     L.pill_pad_x = L.pill_pad_y = 0;
     L.pct_font = &font_styrene_28;   L.ent_pct_font = &font_tiempos_34;
     L.pill_font = &font_styrene_14;  L.reset_font = &font_styrene_12;
@@ -517,27 +519,43 @@ static void place_console(Layout& L) {
         L.ent_pct_font = &font_styrene_20;
     }
 
-    // The rail: the clock on the left, the battery after its widest string,
-    // the status line under the column.
+    // The clock top-left, in the air above Clawd's head, the battery after
+    // its widest string. Jumping happy rises to the seat's apex, under the
+    // clock's own x-span (every act starts at the seat): where the apex
+    // reaches the clock's line, the clock moves up to clear it by a pixel.
     L.small_icons = true;
-    L.title_font[0] = L.title_font[1] = &font_styrene_20;
+    const lv_font_t* title_font = &font_styrene_20;
+    L.title_font[0] = L.title_font[1] = title_font;
     L.title_x = SEAT_X;
-    L.title_y[0] = L.title_y[1] = L.rail.y + 3;
+    int16_t title_y = TITLE_TOP;
+    const int16_t apex = L.seat_feet_y - LAYOUT_CORNER_ACT_H * L.clawd_cell;
+    const int16_t jump_right = L.seat_x + LAYOUT_CORNER_JUMP_W * L.clawd_cell;
+    if (L.title_x < jump_right && apex < title_y + line_h(title_font)) {
+        title_y = apex - line_h(title_font) - 1;
+        if (title_y < 0) title_y = 0;
+    }
+    L.title_y[0] = L.title_y[1] = title_y;
     L.title_cx = L.title_x;          // unused: the clock is left-aligned
     L.logo_x = L.seat_x;             // unused: the seat is on the rail
     L.logo_y = L.rail.y;
-    L.batt_x = L.title_x + widest_clock(&font_styrene_20, true) + TITLE_GAP;
-    L.batt_y = L.rail.y + 1;
+    L.batt_x = L.title_x + widest_clock(title_font, true) + TITLE_GAP;
+    L.batt_y = title_y + 1;
+
+    // The rail holds the status line under the column, sharing its two
+    // edges: the spinner lands on the labels' left edge and a scrolling
+    // alert stops where the bars stop.
     L.status_font = &font_mono_18;
-    L.status_x = L.card[0].x - COL_GAP;
-    L.status_w = L.w - L.status_x - STATUS_INSET;
+    L.status_x = L.card[0].x;
+    L.status_w = L.card[0].w;
     L.status_y = -3;
 
-    // Pairing hint, centred in the column: the heading in the clock's size,
-    // the steps and the note small. A step wider than the column wraps and
-    // the lines under it move down.
+    // Pairing hint, centred on the column, a little wider than it (the
+    // lines are centred, so the slack splits either side): the heading in
+    // the clock's size, the steps and the note small. A step wider still
+    // wraps and the lines under it move down.
     L.pair_y = 0;
-    L.pair_w = L.status_w;
+    L.pair_w = L.w - L.card[0].x - PAIR_INSET;
+    L.pair_x = L.card[0].x + (L.card[0].w - L.pair_w) / 2;
     L.pair_wrap = false;
     L.pair_font[0] = &font_styrene_20;
     L.pair_font[1] = L.pair_font[2] = L.pair_font[3] = &font_styrene_12;

@@ -79,13 +79,15 @@ title and status line fit, measured with the real fonts. Then, by shape:
   when the large one doesn't fit the chord).
 - **Wide and short** (w > h, and no top-down design fits, e.g. 320×172):
   the console. Clawd stands beside the meters, big, on a rail along the
-  bottom that holds the clock, the battery and the status line; the two
-  rows sit in a right-hand column in the usage page's idiom (label left,
-  percentage right, bar, reset line), no card behind them. Clawd's cell is
-  stepped 4 → 3 → 2 until the rows fit beside his widest act (then the
-  short labels, then smaller numbers). Spare height is his headroom, spare
-  width goes into the bars. (`Layout.side_by_side`; the LCD-1.47 at 320×172
-  and a T-Display S3 turned sideways, 320×170, in `PANELS`.)
+  bottom; the clock and the battery sit top-left in the air above his head
+  (the clock moves up when his jump's apex would reach it); the status line
+  sits in the rail under the two rows, sharing their edges. The rows sit in
+  a right-hand column in the usage page's idiom (label left, percentage
+  right, bar, reset line), no card behind them. Clawd's cell is stepped
+  4 → 3 → 2 until the rows fit beside his widest act (then the short
+  labels, then smaller numbers). Spare height is his headroom, spare width
+  goes into the bars. (`Layout.side_by_side`; the LCD-1.47 at 320×172 and
+  a T-Display S3 turned sideways, 320×170, in `PANELS`.)
 
 Any text that might not fit is planned for: the 12-hour clock and the
 spend-capped period line take a smaller size when their widest string
