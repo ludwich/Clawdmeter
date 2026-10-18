@@ -1,4 +1,5 @@
 #include "stage.h"
+#include "scene.h"
 #include "clawd_anim.h"
 #include "clawd_policy.h"
 #include "usage_rate.h"
@@ -30,11 +31,11 @@ static const uint16_t STILL_MS_BY_RATE[4] = { 2600, 2000, 1500, 1000 };
 #define BODY_W  24
 #define MAX_BYTES (64 * 1024)
 #define IDLE_H  18   // the idle pose's rows: where his head is
+#define SCENE_DWELL_MS 3000   // least time in a scene before the next switch
 
 enum Mode { S_STILL, S_ACT, S_WALK };
 
 static lv_obj_t*       img = NULL;
-static lv_obj_t*       ground = NULL;
 static uint8_t*        buf = NULL;
 static lv_image_dsc_t  dsc;
 static int             scr_w = 0, cell = 4, feet_y = 0;
@@ -51,6 +52,8 @@ static bool            from_loop = false;
 static uint32_t        frame_started = 0, still_since = 0, still_ms = 0;
 static const char*     last_play = NULL;
 static ClawdRng        rng;
+static uint32_t        scene_since = 0;    // when the last scene switch started
+static bool            wiping = false;     // a switch of ours is under way
 
 // One frame into the planar RGB565A8 buffer, placed so the body stays at x.
 static void draw(void) {
@@ -136,6 +139,28 @@ static void play_next(bool working) {
     // A prop scene wider than the floor ahead plays facing the open side.
     facing = (x + a->w * cell > scr_w) ? -1 : +1;
     start(a, S_ACT, GAIT_NONE);
+}
+
+// The blinds have the screen covered (or the page just opened): set him up
+// in the scene now underneath. At the office he's at his desk, opening the
+// laptop as the blinds go up; let out, he jumps for joy.
+static void on_covered(SceneId shown) {
+    if (!img) return;
+    if (shown == SCENE_OFFICE) {
+        const int dx = scene_anchor_desk_x();
+        if (dx >= 0) x = dx;
+        facing = +1;
+        if (laptop) start(laptop, S_ACT, GAIT_NONE);
+        else        stand_still(millis());
+    } else if (shown == SCENE_OUTDOOR && wiping) {
+        const ClawdAnim* joy = clawd_anim("jumping happy");
+        if (joy) {
+            facing = +1;
+            last_play = "jumping happy";
+            start(joy, S_ACT, GAIT_NONE);
+        }
+    }
+    wiping = false;
 }
 
 // ─── Moods (drawn around him) ───────────────────────────────────────────────
@@ -284,7 +309,7 @@ static void fx_tick(const StageCues* c, uint32_t now) {
     }
 }
 
-bool stage_open(lv_obj_t* scr, int w, int h) {
+bool stage_open(lv_obj_t* scr, int w, int h, const StageCues* cues) {
     stage_close();
     idle_anim = clawd_anim("walking");
     laptop = clawd_anim("laptop");
@@ -312,12 +337,14 @@ bool stage_open(lv_obj_t* scr, int w, int h) {
     if (!buf) return false;
 
     feet_y = h - h / 16;
-    ground = lv_obj_create(scr);
-    lv_obj_remove_style_all(ground);
-    lv_obj_set_size(ground, w, 2);
-    lv_obj_set_pos(ground, 0, feet_y);
-    lv_obj_set_style_bg_color(ground, THEME_PANEL, 0);
-    lv_obj_set_style_bg_opa(ground, LV_OPA_COVER, 0);
+    // The scenery first, so it's behind him.
+    if (!scene_open(scr, w, h)) {
+        heap_caps_free(buf);
+        buf = NULL;
+        return false;
+    }
+    scene_on_covered(on_covered);
+    wiping = false;
 
     img = lv_image_create(scr);
     lv_obj_clear_flag(img, LV_OBJ_FLAG_CLICKABLE);
@@ -326,14 +353,23 @@ bool stage_open(lv_obj_t* scr, int w, int h) {
     x = (w - BODY_W * cell) / 2;
     facing = +1;
     last_play = NULL;
-    stand_still(millis());
+    const uint32_t now = millis();
+    stand_still(now);
+    // Straight into the right scene before the first frame is drawn, so
+    // opening the page never shows a bare screen (on_covered sits him at his
+    // desk). Without cues the first tick does it.
+    if (cues) {
+        scene_tick(now, cues->minute_of_day);
+        scene_set(cues->working ? SCENE_OFFICE : SCENE_OUTDOOR, false);
+        scene_since = now;
+    }
     return true;
 }
 
 void stage_close(void) {
     fx_delete();
     if (img)    { lv_obj_delete(img);    img = NULL; }
-    if (ground) { lv_obj_delete(ground); ground = NULL; }
+    scene_close();
     if (buf)    { heap_caps_free(buf);   buf = NULL; }
     anim = NULL;
 }
@@ -342,10 +378,29 @@ void stage_tick(const StageCues* cues) {
     if (!img || !anim) return;
     const bool working = cues->working;
     const uint32_t now = millis();
+    scene_tick(now, cues->minute_of_day);
+    const SceneId want = working ? SCENE_OFFICE : SCENE_OUTDOOR;
+    if (scene_target() == SCENE_NONE) {
+        scene_set(want, false);              // opened without cues: straight there
+        scene_since = now;
+    } else if (want != scene_target() && !scene_busy() && now - scene_since >= SCENE_DWELL_MS &&
+               (want == SCENE_OFFICE || mode == S_STILL)) {
+        // Work starts: to the office at once (on_covered sits him down).
+        // Work stops: out only once he's closed the laptop and stood up.
+        wiping = true;
+        scene_set(want, true);
+        scene_since = now;
+    }
     fx_tick(cues, now);
     if (mode == S_STILL) {
-        // Work starts: straight to the laptop, no waiting out the pause.
-        if (working || now - still_since >= still_ms) play_next(working);
+        if (scene_busy()) return;            // nothing new while the blinds move
+        if (scene_target() == SCENE_OFFICE) {
+            // At his desk: back to the laptop the moment work resumes,
+            // otherwise he waits to be let out.
+            if (working) play_next(true);
+            return;
+        }
+        if (now - still_since >= still_ms) play_next(false);
         return;
     }
     const ClawdAnim* a = anim;

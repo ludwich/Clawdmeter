@@ -208,6 +208,14 @@ static void check_serial_cmd() {
             else if (strcmp(cmd_buf, "info") == 0)  send_info();
             else if (strncmp(cmd_buf, "page ", 5) == 0) pages_show((Page)atoi(cmd_buf + 5));
             else if (strncmp(cmd_buf, "mood ", 5) == 0) pages_debug_mood(atoi(cmd_buf + 5));
+            else if (strncmp(cmd_buf, "tod ", 4) == 0) {
+                // QA: the Clawd page's minute of day (-1 = the real clock).
+                Serial.printf("{\"tod\":%d}\n", pages_debug_tod(atoi(cmd_buf + 4)));
+            }
+            else if (strncmp(cmd_buf, "work ", 5) == 0) {
+                // QA: Claude working on the Clawd page (0/1, -1 = the real cue).
+                Serial.printf("{\"work\":%d}\n", pages_debug_work(atoi(cmd_buf + 5)));
+            }
             else if (strcmp(cmd_buf, "perf") == 0)  perf_print();
             else if (strcmp(cmd_buf, "ble") == 0) ble_print_status();
             else if (strcmp(cmd_buf, "disconnect") == 0) ble_disconnect_all();

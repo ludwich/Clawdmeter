@@ -17,6 +17,10 @@ LV_FONT_DECLARE(font_styrene_14);
 
 static bool      enabled = false;
 static int       debug_mood = 0;
+static int       debug_tod = -1;       // forced minute of day, -1 = real
+static int       debug_work = -1;      // forced working, -1 = real
+static long      clock_epoch = 0;      // the app's local wall-clock epoch (s), 0 = none
+static uint32_t  clock_ms = 0;         // millis() when it arrived
 static Page      current = PAGE_METERS;
 static lv_obj_t* clawd_scr = NULL;
 static lv_obj_t* usage_scr = NULL;
@@ -130,6 +134,8 @@ void pages_init(void) {
 bool pages_enabled(void) { return enabled; }
 Page pages_current(void) { return current; }
 
+static void clawd_cues(StageCues* c);
+
 void pages_show(Page p) {
     if (!enabled || p == current || p >= PAGE_COUNT) return;
     const BoardCaps& caps = board_caps();
@@ -150,7 +156,9 @@ void pages_show(Page p) {
         }
         if (p == PAGE_CLAWD) {
             lv_screen_load(clawd_scr);
-            if (!stage_open(clawd_scr, land_w, land_h)) Serial.println("pages: no room for the Clawd page");
+            StageCues c;
+            clawd_cues(&c);
+            if (!stage_open(clawd_scr, land_w, land_h, &c)) Serial.println("pages: no room for the Clawd page");
         } else {
             draw_usage();
             lv_screen_load(usage_scr);
@@ -172,6 +180,10 @@ void pages_next(void) {
 void pages_update(const UsageData* d) {
     last = *d;
     have_last = true;
+    if (d->valid && d->ok) {       // like the meters' title clock (ui.cpp)
+        clock_epoch = d->clock_epoch;
+        clock_ms = millis();
+    }
     if (current == PAGE_USAGE) draw_usage();
 }
 
@@ -188,15 +200,31 @@ void pages_on_alert(void) {
 }
 
 void pages_debug_mood(int bits) { debug_mood = bits; }
+int pages_debug_tod(int minute) { return debug_tod = minute < 0 ? -1 : minute % 1440; }
+int pages_debug_work(int working) { return debug_work = working < 0 ? -1 : (working != 0); }
+
+// Local minute of day for the Clawd page's scenery, -1 when unknown.
+static int minute_of_day(void) {
+    if (debug_tod >= 0) return debug_tod;
+    if (clock_epoch <= 0) return -1;
+    const long s = clock_epoch + (long)((millis() - clock_ms) / 1000);
+    return (int)(((s % 86400) + 86400) % 86400 / 60);
+}
+
+// What the Clawd page shows him doing, and where.
+static void clawd_cues(StageCues* c) {
+    c->working = debug_work >= 0 ? debug_work != 0 : director_claude_working();
+    c->alert = director_alert_active() || (debug_mood & 2);
+    c->alert_text = director_alert_active() ? director_alert_message() : "Claude needs you";
+    c->angry = usage_angry() || (debug_mood & 1);
+    c->minute_of_day = minute_of_day();
+}
 
 void pages_tick(void) {
     if (!enabled) return;
     if (current == PAGE_CLAWD) {
         StageCues c;
-        c.working = director_claude_working();
-        c.alert = director_alert_active() || (debug_mood & 2);
-        c.alert_text = director_alert_active() ? director_alert_message() : "Claude needs you";
-        c.angry = usage_angry() || (debug_mood & 1);
+        clawd_cues(&c);
         stage_tick(&c);
     }
     // Freshness can lapse without a payload; keep the dimming honest.
