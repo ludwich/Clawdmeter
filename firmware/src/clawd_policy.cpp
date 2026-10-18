@@ -209,16 +209,29 @@ bool turn_on_event(TurnTracker* t, char event, uint32_t now, const ClawdTuning* 
     if (event == 'p' || event == 'b') {
         // A follow-up prompt mid-turn keeps the original start: the turn is
         // the whole stretch of Claude working, not the last message.
-        if (!t->in_turn) { t->in_turn = true; t->prompt_at = now; }
+        if (!t->in_turn) { t->in_turn = true; t->prompt_at = now; t->busy_at = now; }
         return false;
     }
     if (event == 's') {
         const bool long_turn = t->in_turn &&
             (uint32_t)(now - t->prompt_at) >= tune->long_turn_ms;
         t->in_turn = false;
+        t->stopped = true;
+        t->stopped_at = now;
         return long_turn;
     }
     return false;
+}
+
+bool clawd_working(TurnTracker* t, uint32_t now, int activity) {
+    if (activity > 0) t->busy_at = now;
+    if (t->in_turn) {
+        uint32_t last = t->prompt_at;
+        if ((int32_t)(t->busy_at - last) > 0) last = t->busy_at;   // tools since the prompt
+        return (uint32_t)(now - last) < CLAWD_WORKING_TURN_MS;
+    }
+    const bool just_stopped = t->stopped && (uint32_t)(now - t->stopped_at) < CLAWD_WORKING_STOP_MS;
+    return activity > 0 && !just_stopped;
 }
 
 // ─── Shows ───────────────────────────────────────────────────────────────────
