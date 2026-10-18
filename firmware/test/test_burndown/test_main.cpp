@@ -140,7 +140,7 @@ static void test_pace_behind(void) {
     TEST_ASSERT_EQUAL(2080, p.elapsed);
     TEST_ASSERT_EQUAL(-13, p.delta);
     TEST_ASSERT_EQUAL(-1, p.out_in);
-    verdict_is("-13", "BEHIND");
+    verdict_is("-13", "UNDER");
 }
 
 static void test_pace_on(void) {
@@ -159,7 +159,7 @@ static void test_pace_ahead_runs_out_late(void) {
     TEST_ASSERT_EQUAL(WEEK_AHEAD, p.level);
     TEST_ASSERT_EQUAL(3, p.delta);
     TEST_ASSERT_EQUAL(9734 - 8080, p.out_in);
-    verdict_is("+3", "AHEAD");
+    verdict_is("+3", "OVER");
 }
 
 static void test_pace_out_in_days(void) {
@@ -168,7 +168,7 @@ static void test_pace_out_in_days(void) {
     TEST_ASSERT_EQUAL(WEEK_OUT, p.level);
     TEST_ASSERT_EQUAL(12, p.delta);
     TEST_ASSERT_EQUAL(8193 - 5080, p.out_in);
-    verdict_is("OUT", "2D");
+    verdict_is("EMPTY", "IN 2D");
 }
 
 static void test_pace_out_in_hours(void) {
@@ -176,17 +176,17 @@ static void test_pace_out_in_hours(void) {
     TEST_ASSERT_EQUAL(WEEK_OUT, p.level);
     TEST_ASSERT_EQUAL(21, p.delta);
     TEST_ASSERT_EQUAL(700, p.out_in);
-    verdict_is("OUT", "11H");
+    verdict_is("EMPTY", "IN 11H");
     burndown_pace(&p, 99, 5080);                              // 5000 min in: out in 50 min
     TEST_ASSERT_EQUAL(50, p.out_in);
-    verdict_is("OUT", "<1H");
+    verdict_is("EMPTY", "IN <1H");
 }
 
 static void test_pace_limit(void) {
     burndown_pace(&p, 100, 3000);
     TEST_ASSERT_EQUAL(WEEK_OUT, p.level);
     TEST_ASSERT_EQUAL(0, p.out_in);
-    verdict_is("OUT", "NOW");
+    verdict_is("EMPTY", "NOW");
     burndown_pace(&p, 130, 3000);                             // clamped
     TEST_ASSERT_EQUAL(100, p.used);
 }
@@ -196,7 +196,7 @@ static void test_pace_red_from_90_even_behind(void) {
     TEST_ASSERT_EQUAL(WEEK_OUT, p.level);
     TEST_ASSERT_EQUAL(-5, p.delta);
     TEST_ASSERT_EQUAL(-1, p.out_in);
-    verdict_is("-5", "BEHIND");
+    verdict_is("-5", "UNDER");
 }
 
 static void test_no_projection_in_the_first_hours(void) {
@@ -204,7 +204,7 @@ static void test_no_projection_in_the_first_hours(void) {
     TEST_ASSERT_EQUAL(WEEK_AHEAD, p.level);
     TEST_ASSERT_EQUAL(-1, p.out_in);
     TEST_ASSERT_EQUAL(-1, burndown_projected_at(&p, 1000));
-    verdict_is("+4", "AHEAD");
+    verdict_is("+4", "OVER");
 }
 
 static void test_used_at_without_history(void) {

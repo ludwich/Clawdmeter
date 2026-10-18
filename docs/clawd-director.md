@@ -378,7 +378,8 @@ at y 162), in front of pixel-art scenery (`scene.cpp`) that says where he is:
   with his balls, picked at random with a still pause between that shortens
   as usage gets busier.
 
-The weekly poster (56×48 px, between the lamp and the LED display):
+The weekly poster (54×48 px, between the lamp, 2 px clear of its cone, and
+the LED display):
 
 - **The number**, top right: the weekly % used now (`w`, rounded), digits
   in the 3×5 font at 2× (10 px tall) with a small `%`. Its colour follows
@@ -388,20 +389,22 @@ The weekly poster (56×48 px, between the lamp and the LED display):
   the average rate (used / elapsed) would run out a day or more before the
   reset. `--` in grey when `w` or `wr` is unknown, and always on
   spend-capped accounts.
-- **The verdict**, two 3×5 lines at the top left: `-13`/`BEHIND`,
-  `ON`/`PACE`, `+3`/`AHEAD` (points against the even pace), or, when red and
-  the average rate reaches 100 % before the reset, `OUT`/`2D` (days until
-  then; hours under a day, `<1H` under an hour), and `OUT`/`NOW` at the
-  limit. The run-out isn't projected in the window's first 12 hours.
+- **The verdict**, two 3×5 lines at the top left, the first in the
+  number's colour: `-13`/`UNDER`, `ON`/`PACE`, `+3`/`OVER` (points against
+  the even pace), or, when red and the average rate reaches 100 % before the
+  reset, `EMPTY`/`IN 2D` (days until then; `IN 11H` under a day, `IN <1H`
+  under an hour), and `EMPTY`/`NOW` at the limit. The run-out isn't
+  projected in the window's first 12 hours.
 - **The burn-up**, below: x = the weekly window (reset − 7 days to the reset,
-  a tick per day, one px column per 4 hours), y = 0..100 % used. Faint dots
-  trace the even pace corner to corner. The % used so far is a teal fill
-  under a navy line built from real points only, joined by straight lines:
+  a tick per day, one px column per 4 hours), y = 0..100 % used. A solid
+  ink staircase traces the even pace corner to corner, over the fill. The %
+  used so far is a teal fill under a navy line built from real points only,
+  joined by straight lines:
   0 % at the window's start (a weekly window starts empty), each hour the
   device recorded (at its half hour), and `w` now. A dashed line marks now,
   and the average rate is dotted on from there to the reset in the number's
-  colour, clipped at 100 % with a mark where it gets there (when you'd run
-  out). With no recorded history the used part is one straight line from the
+  colour, clipped at 100 %, with a 2×3 tick under the x axis in that colour
+  where it gets there (when you'd run out). With no recorded history the used part is one straight line from the
   start to now, so the poster is useful from the first payload.
 
 The math is pure and tested (`burndown.cpp`: `burndown_pace`,

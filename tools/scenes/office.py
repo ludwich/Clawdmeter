@@ -217,8 +217,8 @@ def scene():
     bar_b     = s.color(0x34497E, 0x383E72, 0x26305A)
     pace_c    = s.color(0x8F8A7E, 0x8C7E72, 0x5C5A58)    # the ideal pace dots on the paper
     lvl_ok    = s.color(0x2A8A3A, 0x2E7A3A, 0x1C4E26)    # the weekly number by pace (ui.cpp
-    lvl_ahead = s.color(0xC27406, 0xB46A10, 0x6A420C)    # bar_color's green / amber / red,
-    lvl_out   = s.color(0xCC3428, 0xBC342C, 0x7C221E)    # dark enough to read on the paper)
+    lvl_ahead = s.color(0xB06000, 0xB46A10, 0x8A4E00)    # bar_color's green / amber / red,
+    lvl_out   = s.color(0xCC3428, 0xBC342C, 0x8E1E18)    # dark enough to read on the paper)
     seg_off   = s.color(0x381A1A, 0x3A1A1A, 0x381818)    # the LED's unlit segments
     jug       = s.color(0x8CCCEE, 0x9CB8DA, 0x3C5C7A)
     jug_hi    = s.color(0xD4F0FC, 0xD8E0F0, 0x9ABEDC)
@@ -454,30 +454,34 @@ def scene():
     # Top: the weekly % used now, big (3x5 at 2x, 10 px), in its pace colour
     # (green at or behind the even pace, amber ahead, red from 90 % or when
     # the average rate runs out a day or more before the reset), and a
-    # two-line verdict at the left ("+6 AHEAD", "-4 BEHIND", "ON PACE",
-    # "OUT 2D"). Under it a burn-up of the week: x = the 7-day window (a tick
-    # per day), y = 0..100 % used. Faint dots trace the even pace corner to
-    # corner; the engine fills what was used so far (straight lines between
-    # real points only: 0 at the window's start, the hours the device
-    # recorded, and now), dashes a now line above it, and dots the average
-    # rate on to the reset, clipped at 100 % with a mark where it runs out.
-    px0, py0, pw, ph = 208, 10, 56, 48            # the frame (clear of the lamp's cone)
+    # two-line verdict at the left, its first line in the same colour ("+6"
+    # OVER, "-4" UNDER, "ON" PACE, "EMPTY" IN 2D). Under it a burn-up of the
+    # week: x = the 7-day window (a tick per day), y = 0..100 % used. A solid
+    # ink staircase traces the even pace corner to corner; the engine fills
+    # what was used so far under it (straight lines between real points only:
+    # 0 at the window's start, the hours the device recorded, and now), dashes
+    # a now line above it, and dots the average rate on to the reset, clipped
+    # at 100 %, with a tick under the x axis where it runs out.
+    px0, py0, pw, ph = 210, 10, 54, 48            # the frame (2 px clear of the lamp's cone)
     s.rect(px0, py0, pw, ph, wood_dk)
     s.rect(px0 + 2, py0 + 2, pw - 4, ph - 4, paper)
     levels = (lvl_ok, lvl_ahead, lvl_out, pace_c)
-    s.week_number(px0 + 4, py0 + 3, pw - 8, ink, levels, scale=2)
+    s.week_number(px0 + 3, py0 + 3, pw - 6, ink, levels, scale=2)
     PW, PH = 42, 26                               # the plot: 1 px per 4 hours, ~4 % per row
-    ax, ay = px0 + 7, py0 + 16                    # its top-left
+    ax, ay = px0 + 6, py0 + 16                    # its top-left
     s.rect(ax - 1, ay, 1, PH + 1, ink)            # y axis
     s.rect(ax - 1, ay + PH, PW + 1, 1, ink)       # x axis
     s.rect(ax - 2, ay, 1, 1, ink)                 # 100 % tick
     for d in range(1, 8):                         # day ticks under it (the last = the reset)
         s.rect(ax + d * PW // 7 - 1, ay + PH + 1, 1, 2, ink)
     s.week_chart(ax, ay, PW, PH, bar_b, bar_a, ink, levels)
-    with s.shape():                               # the even pace, over the fill
-        for c in range(0, PW, 2):
-            v = div_round(100 * chart_col_mid(c, PW), WEEK_MINS)
-            s.rect(ax + c, ay + chart_row(v, PH), 1, 1, pace_c)
+    with s.shape():                               # the even pace, a solid staircase over the fill
+        prev = None
+        for c in range(PW):
+            top = chart_row(div_round(100 * chart_col_mid(c, PW), WEEK_MINS), PH)
+            bottom = top if prev is None else max(top, prev - 1)
+            s.rect(ax + c, ay + top, 1, bottom - top + 1, ink)
+            prev = top
 
     # ─── LED countdown to the next 5-hour window, over the water cooler ──────
     # 7-segment digits 8 x 14 (the largest that fit beside the poster), red
