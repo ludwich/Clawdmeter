@@ -42,7 +42,9 @@ pins and hardware gotchas, which loads when you work in that folder.
   the desktop's `chime.rs`); `chime.cpp` streams it through the ES8311.
 - **Generated, never hand-edited**: `splash_animations.h` (only
   `clawd_anim.cpp` includes it), `font_*.c`. Regenerate with the
-  `regenerating-firmware-assets` skill.
+  `regenerating-firmware-assets` skill. `scene_office.h` and
+  `scene_outdoor.h` (the Clawd page's scenery, only `scene.cpp` includes
+  them) come from `tools/scenes/` via `python tools/scenes/scenekit.py build`.
 - **Tests**: `firmware/test/test_*`, native, run with
   `pio test -d firmware -e native`. Keep pure logic (parsing, signals,
   policy, geometry, synthesis) out of LVGL/Arduino code so it stays testable

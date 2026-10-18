@@ -6,8 +6,8 @@
 // into landscape at runtime (display_hal_set_landscape):
 //
 //   meters  the native-orientation dashboard with the corner Clawd (ui.h)
-//   clawd   landscape: Clawd alone, playing; at his laptop while Claude works
-//           (stage.h)
+//   clawd   landscape: Clawd alone, playing outside; in the office at his
+//           laptop while Claude works, lit by the local time (stage.h, scene.h)
 //   usage   landscape: just the two usage bars, large
 //
 // Elsewhere the meters are the only page and nothing here changes anything.
@@ -30,4 +30,10 @@ void pages_on_alert(void);
 // QA (`mood <n>` serial command): force Clawd's moods on his page, bit 1 =
 // angry, bit 2 = yelling; 0 = back to the real cues.
 void pages_debug_mood(int bits);
+// QA (`tod <minute>`): the Clawd page's local time, 0..1439; -1 = the real
+// clock (the app's `t`). Returns the minute that took effect.
+int pages_debug_tod(int minute);
+// QA (`work <0|1|-1>`): force Claude working (1) or not (0) on the Clawd
+// page; -1 = the real cue. Returns the value that took effect.
+int pages_debug_work(int working);
 void pages_tick(void);

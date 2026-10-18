@@ -39,6 +39,52 @@ Converts an alpha PNG to an LVGL RGB565A8 C array. Default tint is white —
 Lucide PNGs ship black-on-transparent and would render invisible without it.
 Paste the output into `firmware/src/icons.h`.
 
+## Clawd page scenes
+
+```bash
+python tools/scenes/scenekit.py build                       # → firmware/src/scene_<name>.h
+python tools/scenes/scenekit.py preview office --tod night --out /tmp/office.png
+python tools/scenes/scenekit.py preview outdoor --t 20000 --clawd idle --x 40 --out /tmp/out.png
+python tools/scenes/scenekit.py preview office --gif 3 --out /tmp/office.gif
+python tools/scenes/scenekit.py preview all                 # every scene × time of day + sheet.png
+```
+
+The scenery behind Clawd on the Clawd page (`firmware/src/scene.cpp`,
+`docs/clawd-director.md` "Pages"): `office.py` while Claude works,
+`outdoor.py` while he plays. Needs Python 3 and Pillow. Each script defines
+`scene()` returning a `Scene`; the same data writes the firmware header and
+renders the previews (320×172 plus a ×3 copy, colours through RGB565), with
+Clawd's official frames composited exactly where `stage.cpp` puts him: the
+idle pose, or the laptop act's typing frame at the `DESK` anchor.
+`preview all` writes to `../scene-previews/` beside the checkout unless
+`--outdir` says otherwise. Rebuild the firmware after `build`.
+
+The canvas is 320×172 px (`W`, `H`); his feet are on `FLOOR_Y` = 162 and a
+cell of his art is 5 px. Shapes are flat rectangles drawn in order (later on
+top), each naming a palette index:
+
+- `c = s.color(day, dusk, night)`: one colour with its three time-of-day
+  variants (0xRRGGBB; omitted ones default to `day`). `s.ambient(day)`
+  derives dusk and night from the day colour; `mix`, `shade` help.
+- `s.rect(x, y, w, h, c)`, `s.text(x, y, "TEXT", c, scale)` (3×5 pixel font,
+  uppercase, digits, `.,:!?-+/%'=<>()*_#`, `^` = a heart; `text_width()`),
+  `s.pixels(x, y, rows, {"a": c, ...}, scale)` (ASCII art, `.` = clear),
+  `s.disc(cx, cy, r, c)`. A `tod=` argument narrows when a shape shows.
+- `with s.tod("night"):` shapes inside show only then.
+- `with s.drift(speed=4):` shapes inside slide together at px/s and wrap
+  (`wrap=(x0, x1)` for their left edge; default off one side, back on the other).
+- `with s.frames(period_ms=400, phase_ms=0) as f:` then `with f.frame():` per
+  frame (an empty frame = blink off); or `s.frames_of([draw_a, draw_b], 400)`.
+  Periods ≥ 100 ms.
+- `s.clock(cx, cy, r, face_c, hand_c, rim_c)`: hands at the real local time.
+- `s.anchor("DESK", x)` (office: Clawd's body-left at the laptop),
+  `s.anchor("SIGN", x, y, w, h)` (an area for live text).
+
+Rules: scenery only, never a drawing of Clawd or any other creature (one Clawd
+on screen, ever); at most 47 groups; keep rects in the hundreds (each costs
+12 B of flash and a fill whenever its area redraws); keep animated groups
+small, since each change redraws its whole box over SPI.
+
 ## Simulator grid
 
 ```bash
