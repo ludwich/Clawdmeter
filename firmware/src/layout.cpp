@@ -47,6 +47,63 @@ int32_t layout_text_width(const lv_font_t* font, const char* text) {
 
 static int16_t line_h(const lv_font_t* f) { return (int16_t)lv_font_get_line_height(f); }
 
+// ─── Ink metrics ─────────────────────────────────────────────────────────────
+// A glyph's box has side bearings (ofs_x before it, the advance past it) and
+// an anti-aliased box edge can itself be nearly blank, so a label's edges
+// and its ink's edges differ by a pixel or two. Where text must land on a
+// grid line, the eye lines up the ink: the first and last columns of the
+// outer glyphs that are at least half opaque.
+
+// Columns of the glyph's bitmap from one side before the first at least
+// half-opaque one; 0 where the bitmap isn't a plain LVGL font bitmap.
+static int faint_columns(const lv_font_t* font, const lv_font_glyph_dsc_t& g, bool from_right) {
+    const lv_font_fmt_txt_dsc_t* fdsc = (const lv_font_fmt_txt_dsc_t*)font->dsc;
+    if (font->get_glyph_dsc != lv_font_get_glyph_dsc_fmt_txt || !fdsc
+        || fdsc->bitmap_format != LV_FONT_FMT_TXT_PLAIN || fdsc->are_glyphs_dynamic_loaded
+        || fdsc->stride != 0 || !(fdsc->bpp == 1 || fdsc->bpp == 2 || fdsc->bpp == 4 || fdsc->bpp == 8))
+        return 0;
+    const lv_font_fmt_txt_glyph_dsc_t& d = fdsc->glyph_dsc[g.gid.index];
+    const uint8_t* bm = fdsc->glyph_bitmap + d.bitmap_index;
+    const int bpp = fdsc->bpp, w = d.box_w, h = d.box_h;
+    const int mask = (1 << bpp) - 1, half = 1 << (bpp - 1);
+    int n = 0;
+    for (int i = 0; i < w; i++) {
+        const int col = from_right ? w - 1 - i : i;
+        int peak = 0;
+        for (int row = 0; row < h; row++) {
+            const int bit = (row * w + col) * bpp;          // rows packed, no padding
+            const int v = (bm[bit >> 3] >> (8 - bpp - (bit & 7))) & mask;
+            if (v > peak) peak = v;
+        }
+        if (peak >= half) break;
+        n++;
+    }
+    return n;
+}
+
+int16_t layout_ink_lsb(const lv_font_t* font, const char* text) {
+    const uint32_t cp = next_codepoint(&text);
+    lv_font_glyph_dsc_t g;
+    if (!cp || !lv_font_get_glyph_dsc(font, &g, cp, 0)) return 0;
+    return (int16_t)(g.ofs_x + faint_columns(font, g, false));
+}
+
+int16_t layout_ink_rsb(const lv_font_t* font, const char* text) {
+    uint32_t cp = 0;
+    for (uint32_t c = next_codepoint(&text); c; c = next_codepoint(&text)) cp = c;
+    lv_font_glyph_dsc_t g;
+    if (!cp || !lv_font_get_glyph_dsc(font, &g, cp, 0)) return 0;
+    return (int16_t)(g.adv_w - g.ofs_x - g.box_w + faint_columns(font, g, true));
+}
+
+// The cap top of digits in `font`, down from the line's top edge: where
+// its numbers' ink starts.
+static int16_t cap_top(const lv_font_t* font) {
+    lv_font_glyph_dsc_t g;
+    if (!lv_font_get_glyph_dsc(font, &g, '0', 0)) return 0;
+    return (int16_t)(line_h(font) - font->base_line - (g.ofs_y + g.box_h));
+}
+
 static int16_t widest(const lv_font_t* f, const char* const* texts, int n) {
     int32_t w = 0;
     for (int i = 0; i < n; i++) {
@@ -452,8 +509,9 @@ static bool place_round(Layout& L, const Design& d, const Chrome** chrome) {
 // the rows go beside Clawd instead of under him. He stands on a rail along
 // the bottom, near page-size; the two rows sit in a column to his right in
 // the usage page's idiom (label left, percentage right, bar, reset line);
-// the clock and the battery sit top-left, in the air above his head; the
-// rail holds his feet and the status line, under the column.
+// the clock and the battery sit top-left, in the air above his head, on the
+// first row's cap line; the rail holds his feet and the status line, which
+// runs the whole floor from his seat to the bars' right edge.
 
 #define RAIL_H         26   // the rail: full width, along the bottom
 #define COL_GAP         6   // the column starts this far right of Clawd's widest act
@@ -462,7 +520,6 @@ static bool place_round(Layout& L, const Design& d, const Chrome** chrome) {
 #define ROW_H          62   // label 14, percentage 30, bar at 30, reset line at 47
 #define RIGHT_MARGIN   10   // the rows end this far from the right edge
 #define SEAT_X         12   // Clawd's seat, from the left edge
-#define TITLE_TOP       8   // the clock's top edge, where the jump leaves it room
 #define PAIR_INSET      4   // the pairing hint's lines may run this close to the right edge
 
 // The console's rows fit a column col_w wide: a label beside "100%", the
@@ -519,19 +576,23 @@ static void place_console(Layout& L) {
         L.ent_pct_font = &font_styrene_20;
     }
 
-    // The clock top-left, in the air above Clawd's head, the battery after
-    // its widest string. Jumping happy rises to the seat's apex, under the
-    // clock's own x-span (every act starts at the seat): where the apex
-    // reaches the clock's line, the clock moves up to clear it by a pixel.
+    // The clock top-left, in the air above Clawd's head, on the grid: its
+    // cap top on the first row's number's cap top, so the word, the clock
+    // and the percentages share one line. The battery after its widest
+    // string. Jumping happy rises to the seat's apex, under the clock's own
+    // x-span (every act starts at the seat): where the apex reaches the
+    // clock's baseline, the clock moves up to clear it by a pixel (digits
+    // have no descenders; "Usage"'s g tail is the one thing he may brush).
     L.small_icons = true;
     const lv_font_t* title_font = &font_styrene_20;
     L.title_font[0] = L.title_font[1] = title_font;
     L.title_x = SEAT_X;
-    int16_t title_y = TITLE_TOP;
+    const int16_t title_ink_h = line_h(title_font) - title_font->base_line;   // top edge to baseline
+    int16_t title_y = L.card[0].y + cap_top(L.pct_font) - cap_top(title_font);
     const int16_t apex = L.seat_feet_y - LAYOUT_CORNER_ACT_H * L.clawd_cell;
     const int16_t jump_right = L.seat_x + LAYOUT_CORNER_JUMP_W * L.clawd_cell;
-    if (L.title_x < jump_right && apex < title_y + line_h(title_font)) {
-        title_y = apex - line_h(title_font) - 1;
+    if (L.title_x < jump_right && apex < title_y + title_ink_h) {
+        title_y = apex - title_ink_h - 1;
         if (title_y < 0) title_y = 0;
     }
     L.title_y[0] = L.title_y[1] = title_y;
@@ -541,12 +602,13 @@ static void place_console(Layout& L) {
     L.batt_x = L.title_x + widest_clock(title_font, true) + TITLE_GAP;
     L.batt_y = title_y + 1;
 
-    // The rail holds the status line under the column, sharing its two
-    // edges: the spinner lands on the labels' left edge and a scrolling
-    // alert stops where the bars stop.
+    // The rail holds the status line along the whole floor: the spinner
+    // under Clawd's seat, where the clock starts, and room to the bars'
+    // right edge, so an alert reads at a glance and only a long one
+    // scrolls. His feet end at the rail's top edge, nothing of his is in it.
     L.status_font = &font_mono_18;
-    L.status_x = L.card[0].x;
-    L.status_w = L.card[0].w;
+    L.status_x = SEAT_X;
+    L.status_w = L.w - RIGHT_MARGIN - SEAT_X;
     L.status_y = -3;
 
     // Pairing hint, centred on the column, a little wider than it (the

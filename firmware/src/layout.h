@@ -73,11 +73,11 @@ struct Layout {
     // console. Clawd stands on a rail along the bottom, big, and the two
     // rows sit in a column to his right (card[0] / card[1], no background,
     // no padding: label top-left, percentage top-right, bar, reset line).
-    // The clock sits top-left above his head (left-aligned at title_x,
-    // under the jump's apex), the battery after it, and the status line
-    // fills the rail under the column, sharing its edges (left-aligned at
-    // status_x, status_w wide). The header fields above (logo_x/y,
-    // title_cx) are unused.
+    // The clock sits top-left above his head (left-aligned at title_x, its
+    // cap top on the first row's number's, under the jump's apex), the
+    // battery after it, and the status line runs along the rail from the
+    // seat to the bars' right edge (left-aligned at status_x, status_w
+    // wide). The header fields above (logo_x/y, title_cx) are unused.
     bool       side_by_side;
     LayoutRect rail;                 // the rail: full width, along the bottom
     int8_t     clawd_cell;           // corner Clawd's cell size (px per art cell)
@@ -105,3 +105,10 @@ Layout layout_compute(const LayoutShape& shape);
 
 // Pixel width of UTF-8 `text` in `font`, as LVGL draws it (kerning included).
 int32_t layout_text_width(const lv_font_t* font, const char* text);
+
+// The text's optical side bearings: how far its ink (the first and last
+// at least half-opaque columns of its outer glyphs) starts right of the
+// label's left edge and ends left of its right edge. Text that must land on
+// a grid line is nudged by them, so its ink sits on the line, not its box.
+int16_t layout_ink_lsb(const lv_font_t* font, const char* text);
+int16_t layout_ink_rsb(const lv_font_t* font, const char* text);

@@ -358,8 +358,11 @@ a board capability, with no NVS override, desktop setting, or serial toggle.
   on y 146, with the whole height as headroom (jumping happy's apex at y 26,
   no tall-act swap). The laptop act (136×92) stays inside x 12..148, left of
   the instrument column; the clock and the battery sit top-left above his
-  head (clock at y 4, under the jump's apex); the status line sits to his
-  right in the rail, sharing the column's edges (x 154..310). His
+  head, on the grid (the clock's cap top on the first row's number's, y 9;
+  the jump's apex stops exactly at its baseline); the status line runs the
+  rail from his seat to the bars' right edge (x 12..310, the spinner under
+  his feet), so an alert reads at a glance and only a long one scrolls. The
+  rail is the bar tracks' grey, with a dim floor line along its top. His
   buffer is 37.5 KB of internal RAM (the laptop at 4 px); if that allocation
   fails `ui.cpp` retries at 3 px (21 KB, seat moved in to x 24), and failing
   that stands the still Clawd there. On the LCD-1.47 the 4 px buffer
@@ -618,6 +621,9 @@ and Off, 35-peek-* a tap on the meters: crouch, hop, ducks
   `clawd joy`, `clawd lurk`, `clawd peek [x]` (the peek now, as a tap at x)
   or `clawd home` on the serial console, then `screenshot`
   (`.claude/skills/capturing-device-screenshots/scripts/screenshot.py`). This replaces swapping the boot screen in `main.cpp`.
+  Give the screensaver 3 s or more before the capture: the walk-off and the
+  rise's settle take about that long, and a capture during the settle shows
+  the body a few px below the top edge (the spring's dip), not the rest pose.
   The device boots to the meters. `perf` prints the redraw cost of the last
   face rise, face drop and performance (below).
 

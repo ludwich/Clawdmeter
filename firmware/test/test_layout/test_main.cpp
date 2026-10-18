@@ -126,7 +126,7 @@ static bool inside(Box a, Box b) {   // a inside b
 
 // The console (side_by_side): Clawd on the rail, the rows in a column to
 // his right, the clock and the battery top-left above him, the status line
-// in the rail under the column.
+// along the rail from his seat to the column's right edge.
 static void check_console(const Panel& p) {
     const Box column = { L.card[0].x, 0, L.card[0].w, L.rail.y };
     if (L.rail.y + L.rail.h != p.h || L.rail.x != 0 || L.rail.w != p.w) fail("rail", rail());
@@ -164,20 +164,23 @@ static void check_console(const Panel& p) {
     if (L.reset_y + ink_h(L.reset_font) > L.card[0].h) fail("reset line vs row bottom", card(0));
 
     // The clock's widest string top-left, then the battery: on the glass,
-    // above the rail, left of the column, clear of every act at the seat
-    // (jumping happy's apex included).
+    // above the rail, left of the column, clear of every act at the seat.
+    // Against the acts (jumping happy's apex included) the clock is its ink
+    // down to the baseline: digits have no descenders, and the layout lets
+    // the apex come up to that line.
     for (title_fmt = 0; title_fmt < 2; title_fmt++) {
         const lv_font_t* f = L.title_font[title_fmt];
         if (!f) fail("console without a clock", rail());
         const int w = widest_clock(f, title_fmt == 1);
         const Box t = { L.title_x, L.title_y[title_fmt], w, line_h(f) };
+        const Box ink = { t.x, t.y, t.w, line_h(f) - f->base_line };
         check_on_glass("clock", t);
         if (t.y + t.h > L.rail.y) fail("clock vs rail", t);
         check_apart("clock vs battery", t, battery());
         check_apart("clock vs column", t, column);
         for (const Act& a : CORNER_ACTS) {
             const Box b = { L.seat_x, L.seat_feet_y - a.h * L.clawd_cell, a.w * L.clawd_cell, a.h * L.clawd_cell };
-            check_apart(a.name, t, b);
+            check_apart(a.name, ink, b);
         }
     }
     check_on_glass("battery", battery());
@@ -188,9 +191,11 @@ static void check_console(const Panel& p) {
         check_apart(a.name, battery(), b);
     }
 
-    // The status line: in the rail, under the column and no wider.
+    // The status line: in the rail, from the seat to the column's right
+    // edge (his feet end at the rail's top edge, so nothing of his is in it).
     const Box status = { L.status_x, 0, L.status_w, L.rail.y };
-    if (!inside(status, column)) fail("status line vs column", status);
+    if (L.status_x != L.seat_x) fail("status line not at the seat", status);
+    if (L.status_x + L.status_w != column.x + column.w) fail("status line vs column's right edge", status);
     for (const char* s : STATUS_TEXT_REQUIRED) {
         const int w = text_w(L.status_font, s), lh = line_h(L.status_font);
         const Box b = { L.status_x, p.h + L.status_y - lh, w, lh };
@@ -359,6 +364,16 @@ static void test_large_410x502(void) {
 }
 
 // The LCD-1.47 in landscape: the console.
+// Ink bearings: a glyph's near-blank anti-aliased edge columns count as
+// bearing, so "54%" nudged right by its rsb puts solid ink on the edge and
+// "Session" nudged left by its lsb starts solid on the left edge.
+static void test_ink_bearings(void) {
+    TEST_ASSERT_EQUAL_INT16(2, layout_ink_rsb(&font_styrene_28, "54%"));   // 1 px advance + 1 faint column
+    TEST_ASSERT_EQUAL_INT16(1, layout_ink_lsb(&font_styrene_14, "Session"));   // the S's faint first column
+    TEST_ASSERT_EQUAL_INT16(1, layout_ink_lsb(&font_styrene_12, "Resets in 1h"));   // ofs_x
+    TEST_ASSERT_EQUAL_INT16(0, layout_ink_lsb(&font_styrene_28, ""));
+}
+
 static void test_console_320x172(void) {
     L = layout_compute({ 320, 172, false });
     TEST_ASSERT_TRUE(L.side_by_side);
@@ -381,15 +396,19 @@ static void test_console_320x172(void) {
     TEST_ASSERT_TRUE(L.small_icons);
     TEST_ASSERT_EQUAL_PTR(&font_styrene_20, L.title_font[0]);
     TEST_ASSERT_EQUAL_PTR(&font_styrene_20, L.title_font[1]);
-    // The clock top-left: jumping happy's apex (y 26) reaches an 8 px-deep
-    // clock line, so it sits at y 4 and clears the apex by a pixel.
-    TEST_ASSERT_EQUAL_INT16(12, L.title_x);    TEST_ASSERT_EQUAL_INT16(4, L.title_y[0]);
-    TEST_ASSERT_EQUAL_INT16(4, L.title_y[1]);
-    TEST_ASSERT_EQUAL_INT16(112, L.batt_x);    TEST_ASSERT_EQUAL_INT16(5, L.batt_y);
+    // The clock top-left on the grid: its cap top (3 px into styrene_20)
+    // on the first row's number's (4 px into styrene_28 at y 8), so y 9;
+    // its baseline (y 26) is exactly where jumping happy's apex (y 26)
+    // stops, so it stays.
+    TEST_ASSERT_EQUAL_INT16(12, L.title_x);    TEST_ASSERT_EQUAL_INT16(9, L.title_y[0]);
+    TEST_ASSERT_EQUAL_INT16(9, L.title_y[1]);
+    TEST_ASSERT_EQUAL_INT16(112, L.batt_x);    TEST_ASSERT_EQUAL_INT16(10, L.batt_y);
     TEST_ASSERT_EQUAL_PTR(&font_mono_18, L.status_font);
-    // The status line shares the column's edges (x 154..310).
-    TEST_ASSERT_EQUAL_INT16(154, L.status_x);  TEST_ASSERT_EQUAL_INT16(156, L.status_w);
+    // The status line runs the rail from the seat to the bars' right edge
+    // (x 12..310): "Clawdmeter test alert" sits still.
+    TEST_ASSERT_EQUAL_INT16(12, L.status_x);   TEST_ASSERT_EQUAL_INT16(298, L.status_w);
     TEST_ASSERT_EQUAL_INT16(-3, L.status_y);
+    TEST_ASSERT_TRUE(text_w(L.status_font, "Clawdmeter test alert") <= L.status_w);
     TEST_ASSERT_EQUAL_PTR(&font_styrene_20, L.pair_font[0]);
     TEST_ASSERT_EQUAL_PTR(&font_styrene_12, L.pair_font[1]);
     TEST_ASSERT_EQUAL_INT16(0, L.pair_y);      TEST_ASSERT_EQUAL_INT16(162, L.pair_w);
@@ -448,6 +467,7 @@ int main(int, char**) {
     RUN_TEST(test_compact_368x448);
     RUN_TEST(test_large_410x502);
     RUN_TEST(test_small_240x240);
+    RUN_TEST(test_ink_bearings);
     RUN_TEST(test_console_320x172);
     RUN_TEST(test_text_width);
     RUN_TEST(print_layouts);

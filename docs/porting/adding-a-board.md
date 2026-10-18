@@ -79,9 +79,10 @@ title and status line fit, measured with the real fonts. Then, by shape:
   when the large one doesn't fit the chord).
 - **Wide and short** (w > h, and no top-down design fits, e.g. 320×172):
   the console. Clawd stands beside the meters, big, on a rail along the
-  bottom; the clock and the battery sit top-left in the air above his head
-  (the clock moves up when his jump's apex would reach it); the status line
-  sits in the rail under the two rows, sharing their edges. The rows sit in
+  bottom; the clock and the battery sit top-left in the air above his head,
+  the clock's cap top on the first row's number's (it moves up when his
+  jump's apex would reach its baseline); the status line runs the rail from
+  his seat to the rows' right edge. The rows sit in
   a right-hand column in the usage page's idiom (label left, percentage
   right, bar, reset line), no card behind them. Clawd's cell is stepped
   4 → 3 → 2 until the rows fit beside his widest act (then the short

@@ -324,21 +324,36 @@ static void init_battery_icons(void) {
 // The console's row: the label sits on the percentage's lower half.
 #define CONSOLE_LABEL_Y 11
 
+// The console's rows have no card: their edges are the column's, and the
+// eye lines the ink up with them, not the labels' boxes. A label on the
+// column's left edge moves left by its first glyph's bearing, a number on
+// the right edge moves right by its "%"'s, so the ink lands on the bars'
+// ends (layout_ink_lsb / layout_ink_rsb).
+static void ink_left(lv_obj_t* lbl, int32_t y) {
+    const lv_font_t* f = lv_obj_get_style_text_font(lbl, LV_PART_MAIN);
+    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, -layout_ink_lsb(f, lv_label_get_text(lbl)), y);
+}
+static void ink_right(lv_obj_t* lbl, int32_t dx, int32_t y) {
+    const lv_font_t* f = lv_obj_get_style_text_font(lbl, LV_PART_MAIN);
+    lv_obj_align(lbl, LV_ALIGN_TOP_RIGHT, dx + layout_ink_rsb(f, "%"), y);
+}
+
 // The session row's number: "13%" top-right, or the spend-capped account's
 // "42" with a small "%" after it, the pair ending at the row's right edge
 // on a shared baseline. (Top-down cards place the "%" in ui_update.)
 static void place_session_pct(bool ent) {
     if (!L.side_by_side) return;
     if (!ent) {
-        lv_obj_align(lbl_session_pct, LV_ALIGN_TOP_RIGHT, 0, 0);
+        ink_right(lbl_session_pct, 0, 0);
         return;
     }
     const lv_font_t* sym = L.reset_font;
     const int sym_w = layout_text_width(sym, "%");
     const int num_top = -3;
     const int baseline = num_top + lv_font_get_line_height(L.ent_pct_font) - L.ent_pct_font->base_line;
-    lv_obj_align(lbl_session_pct, LV_ALIGN_TOP_RIGHT, -(sym_w + 4), num_top);
-    lv_obj_align(lbl_session_pct_sym, LV_ALIGN_TOP_RIGHT, 0,
+    const int sym_rsb = layout_ink_rsb(sym, "%");
+    lv_obj_align(lbl_session_pct, LV_ALIGN_TOP_RIGHT, sym_rsb - (sym_w + 4), num_top);
+    lv_obj_align(lbl_session_pct_sym, LV_ALIGN_TOP_RIGHT, sym_rsb,
                  baseline - (lv_font_get_line_height(sym) - sym->base_line));
 }
 
@@ -354,9 +369,10 @@ static lv_obj_t* make_usage_panel(lv_obj_t* parent, const LayoutRect& r, const c
 
     *out_pill = make_pill(panel, pill_text);
     if (L.side_by_side) {
-        // The console's row: the label top-left, the percentage top-right.
-        lv_obj_align(*out_pct, LV_ALIGN_TOP_RIGHT, 0, 0);
-        lv_obj_align(*out_pill, LV_ALIGN_TOP_LEFT, 0, CONSOLE_LABEL_Y);
+        // The console's row: the label top-left, the percentage top-right,
+        // their ink on the column's edges.
+        ink_right(*out_pct, 0, 0);
+        ink_left(*out_pill, CONSOLE_LABEL_Y);
     } else {
         lv_obj_set_pos(*out_pct, 0, 0);
         lv_obj_align(*out_pill, LV_ALIGN_TOP_RIGHT, 0, 1);
@@ -368,7 +384,8 @@ static lv_obj_t* make_usage_panel(lv_obj_t* parent, const LayoutRect& r, const c
     lv_label_set_text(*out_reset, "---");
     lv_obj_set_style_text_font(*out_reset, L.reset_font, 0);
     lv_obj_set_style_text_color(*out_reset, COL_DIM, 0);
-    lv_obj_set_pos(*out_reset, 0, L.reset_y);
+    if (L.side_by_side) ink_left(*out_reset, L.reset_y);
+    else                lv_obj_set_pos(*out_reset, 0, L.reset_y);
 
     return panel;
 }
@@ -453,16 +470,17 @@ static void apply_title_font(void) {
     lv_obj_clear_flag(lbl_title, LV_OBJ_FLAG_HIDDEN);
 }
 
-// The console's rail: a band along the bottom that Clawd stands on, with a
-// floor line along its top edge, the dim text colour at 40 % so it reads
-// on an IPS panel (the bar-track grey didn't). Created first, under
-// everything else.
+// The console's rail: a band along the bottom that Clawd stands on, in the
+// bar tracks' grey so the floor and the bars are one material (the card
+// grey beside it read as a smudge), with a floor line along its top edge,
+// the dim text colour at 40 % so it reads on an IPS panel. Created first,
+// under everything else.
 static void build_rail(lv_obj_t* scr) {
     lv_obj_t* rail = lv_obj_create(scr);
     lv_obj_remove_style_all(rail);
     lv_obj_set_pos(rail, L.rail.x, L.rail.y);
     lv_obj_set_size(rail, L.rail.w, L.rail.h);
-    lv_obj_set_style_bg_color(rail, COL_PANEL, 0);
+    lv_obj_set_style_bg_color(rail, COL_BAR_BG, 0);
     lv_obj_set_style_bg_opa(rail, LV_OPA_COVER, 0);
     lv_obj_clear_flag(rail, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_t* edge = lv_obj_create(scr);
@@ -514,7 +532,8 @@ static void init_usage_screen(lv_obj_t* scr) {
     lv_label_set_text(lbl_spending_desc, "of spending limit");
     lv_obj_set_style_text_font(lbl_spending_desc, L.reset_font, 0);
     lv_obj_set_style_text_color(lbl_spending_desc, COL_DIM, 0);
-    lv_obj_set_pos(lbl_spending_desc, 0, L.reset_y);
+    if (L.side_by_side) ink_left(lbl_spending_desc, L.reset_y);
+    else                lv_obj_set_pos(lbl_spending_desc, 0, L.reset_y);
     lv_obj_add_flag(lbl_spending_desc, LV_OBJ_FLAG_HIDDEN);
 
     lbl_spending_status = lv_label_create(panel_session);
@@ -751,6 +770,10 @@ void ui_update(const UsageData* data) {
         format_reset_time(data->session_reset_mins, buf, sizeof(buf), "Not started");
         lv_label_set_text(lbl_session_reset, buf);
     }
+    if (L.side_by_side) {   // the labels' first glyphs changed with their text
+        ink_left(lbl_session_label, CONSOLE_LABEL_Y);
+        ink_left(lbl_session_reset, L.reset_y);
+    }
 
     lv_bar_set_value(bar_session, s_pct, LV_ANIM_ON);
 
@@ -778,6 +801,13 @@ void ui_update(const UsageData* data) {
         format_reset_time(data->weekly_reset_mins, buf, sizeof(buf), "---");
         lv_obj_set_style_text_font(lbl_weekly_reset, L.reset_font, 0);
         lv_label_set_text(lbl_weekly_reset, buf);
+    }
+    if (L.side_by_side) {
+        ink_left(lbl_weekly_label, CONSOLE_LABEL_Y);
+        // The period line is recoloured ("#hex text#"), so its ink starts at
+        // the first glyph after the markup: the bearing comes from "Resets".
+        lv_obj_align(lbl_weekly_reset, LV_ALIGN_TOP_LEFT,
+                     -layout_ink_lsb(lv_obj_get_style_text_font(lbl_weekly_reset, LV_PART_MAIN), "Resets"), L.reset_y);
     }
     apply_bar_colors(data);
 }
