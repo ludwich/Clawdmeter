@@ -1,4 +1,4 @@
-// LVGL's two font calls the layout uses, over the real font data
+// LVGL's font calls the layout uses, over the real font data
 // (fonts.c): glyph advance with kerning, rounded per glyph as
 // lv_font_get_glyph_dsc_fmt_txt does, and the line height.
 #include "lvgl.h"
@@ -46,6 +46,25 @@ uint16_t lv_font_get_glyph_width(const lv_font_t* font, uint32_t letter, uint32_
     int32_t adv = (int32_t)d->glyph_dsc[gid].adv_w + kv;
     if (adv < 0) adv = 0;
     return (uint16_t)((adv + 8) >> 4);
+}
+
+// The glyph's box and advance (no kerning, as the layout asks with
+// letter_next 0), like lv_font_get_glyph_dsc_fmt_txt.
+bool lv_font_get_glyph_dsc(const lv_font_t* font, lv_font_glyph_dsc_t* g, uint32_t letter, uint32_t next) {
+    (void)next;
+    const lv_font_fmt_txt_dsc_t* d = (const lv_font_fmt_txt_dsc_t*)font->dsc;
+    const uint32_t gid = glyph_id(d, letter);
+    if (!gid) return false;
+    const lv_font_fmt_txt_glyph_dsc_t* s = &d->glyph_dsc[gid];
+    g->resolved_font = font;
+    g->gid.index = gid;
+    g->gid.src = 0;
+    g->adv_w = (uint16_t)((s->adv_w + 8) >> 4);
+    g->box_w = s->box_w;
+    g->box_h = s->box_h;
+    g->ofs_x = s->ofs_x;
+    g->ofs_y = s->ofs_y;
+    return true;
 }
 
 int32_t lv_font_get_line_height(const lv_font_t* font) { return font->line_height; }

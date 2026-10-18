@@ -407,13 +407,14 @@ static void test_console_320x172(void) {
     TEST_ASSERT_TRUE(L.small_icons);
     TEST_ASSERT_EQUAL_PTR(&font_styrene_20, L.title_font[0]);
     TEST_ASSERT_EQUAL_PTR(&font_styrene_20, L.title_font[1]);
-    // The clock top-left on the grid: its cap top (3 px into styrene_20)
-    // on the first row's number's (4 px into styrene_28 at y 8), so y 9;
-    // its baseline (y 26) is exactly where jumping happy's apex (y 26)
-    // stops, so it stays.
-    TEST_ASSERT_EQUAL_INT16(12, L.title_x);    TEST_ASSERT_EQUAL_INT16(9, L.title_y[0]);
-    TEST_ASSERT_EQUAL_INT16(9, L.title_y[1]);
-    TEST_ASSERT_EQUAL_INT16(112, L.batt_x);    TEST_ASSERT_EQUAL_INT16(10, L.batt_y);
+    // The clock top-left: on the grid it would sit at y 9 (its cap top on
+    // the first row's number's), but jumping happy's apex (y 26) would then
+    // run into the "g" tail of "Usage" (ink to 9 + 17 + 4 = 30), so the
+    // apex lifts it off the grid until that tail's ink ends at y 24, 2 px
+    // (TITLE_APEX_GAP) above the apex: y 26 - 2 - 21 = 3.
+    TEST_ASSERT_EQUAL_INT16(12, L.title_x);    TEST_ASSERT_EQUAL_INT16(3, L.title_y[0]);
+    TEST_ASSERT_EQUAL_INT16(3, L.title_y[1]);
+    TEST_ASSERT_EQUAL_INT16(112, L.batt_x);    TEST_ASSERT_EQUAL_INT16(4, L.batt_y);
     TEST_ASSERT_EQUAL_PTR(&font_mono_18, L.status_font);
     // The status line runs the rail from the seat to the bars' right edge
     // (x 12..310): "Clawdmeter test alert" sits still.

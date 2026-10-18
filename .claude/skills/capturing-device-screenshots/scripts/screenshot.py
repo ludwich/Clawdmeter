@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Capture a connected Clawdmeter board's screen as a PNG.
 
-    screenshot.py [out.png] [--port PORT] [--timeout 15]
+    screenshot.py [out.png] [--port PORT] [--timeout 30]
                   [--cmd "page 1" --cmd "work 1" ...] [--wait 1.5] [--scale 3]
 
 Sends the `screenshot` serial command and writes a PNG sized to what the
@@ -164,8 +164,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("out", nargs="?", default="screenshot.png")
     ap.add_argument("--port")
-    ap.add_argument("--timeout", type=float, default=15.0,
-                    help="seconds for the capture itself (a 480x480 frame takes ~4 s at 115200 baud)")
+    ap.add_argument("--timeout", type=float, default=30.0,
+                    help="seconds for the capture itself (~2-4 s over native USB; a CYD's "
+                         "115200-baud UART needs ~13 s for 320x240)")
     ap.add_argument("--cmd", action="append", default=[],
                     help="serial command to send before capturing (repeatable, in order)")
     ap.add_argument("--wait", type=float, default=1.5,

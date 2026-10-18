@@ -12,8 +12,12 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/screenshot.py /path/out.png --port COM3 \
 ```
 
 Then Read the PNG. It's sized to what the board drew (480×480 on the
-AMOLED-2.16, 172×320 meters / 320×172 pages on the LCD-1.47 C6) and takes
-about 2 s.
+AMOLED-2.16, 320×172 for every page on the LCD-1.47 C6, which runs
+landscape). Boards on native USB (S3, C6) take about 2-4 s; the classic-ESP32
+CYDs talk through a real 115200-baud UART (CH340), so a 320×240 capture
+streams 150 KB at ~11.5 KB/s, about 13 s, with the main loop blocked
+meanwhile. The default `--timeout` (30 s) covers that; raise it if log
+output is heavy.
 Write it outside the repo unless it belongs in the PR.
 
 - **Port**: the only `/dev/ttyACM*` or `/dev/cu.usbmodem*` attached (on
@@ -35,8 +39,8 @@ Write it outside the repo unless it belongs in the PR.
   strips left pixels uncovered (log text interleaved with the stream).
   Boards with PSRAM send one snapshot frame (`SCREENSHOT_START w h bytes`).
 - **Orientation**: the PNG is in LVGL's coordinates. A strip capture follows
-  the current resolution, so landscape pages come out landscape and the
-  portrait meters portrait, however the board stands. (The PSRAM snapshot
+  the current resolution (LVGL's rotation), however the board stands: the
+  LCD-1.47 gives 320×172 for the meters and the pages alike. (The PSRAM snapshot
   is always `BoardCaps` width × height.)
 
 Device captures show what the firmware drew, not the panel's colours,

@@ -34,6 +34,7 @@ enum {
     LV_FONT_FMT_TXT_CMAP_FORMAT0_TINY,
     LV_FONT_FMT_TXT_CMAP_SPARSE_TINY,
 };
+enum { LV_FONT_FMT_TXT_PLAIN = 0 };
 
 typedef struct lv_font_t lv_font_t;
 
@@ -71,6 +72,8 @@ typedef struct {
     uint16_t bpp;
     uint16_t kern_classes;
     uint16_t bitmap_format;
+    uint8_t  stride;
+    bool     are_glyphs_dynamic_loaded;
 } lv_font_fmt_txt_dsc_t;
 
 bool lv_font_get_glyph_dsc_fmt_txt(const lv_font_t* font, void* dsc_out, uint32_t letter, uint32_t letter_next);
@@ -92,6 +95,16 @@ struct lv_font_t {
     void* user_data;
 };
 
+// The glyph fields layout.cpp reads (LVGL 9's lv_font_glyph_dsc_t, trimmed).
+typedef struct {
+    const lv_font_t* resolved_font;
+    struct { uint32_t index; uintptr_t src; } gid;
+    uint16_t adv_w;            // whole px
+    uint16_t box_w, box_h;
+    int16_t  ofs_x, ofs_y;
+} lv_font_glyph_dsc_t;
+
+bool lv_font_get_glyph_dsc(const lv_font_t* font, lv_font_glyph_dsc_t* dsc_out, uint32_t letter, uint32_t letter_next);
 uint16_t lv_font_get_glyph_width(const lv_font_t* font, uint32_t letter, uint32_t letter_next);
 int32_t  lv_font_get_line_height(const lv_font_t* font);
 
