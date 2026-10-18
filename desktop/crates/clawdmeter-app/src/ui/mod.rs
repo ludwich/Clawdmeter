@@ -80,6 +80,7 @@ const ASSETS: &[(&str, &[u8])] = bundled![
         "freenove_s3_display_nontouch",
         "sensecap_indicator_d1l",
         "spotpear_s3_154",
+        "waveshare_lcd_147_c6_nontouch",
     ],
     "icons": [
         "gauge",

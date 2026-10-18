@@ -58,6 +58,7 @@ DISPLAY_NAMES = {
     "freenove_s3_display_nontouch": "Freenove ESP32-S3 Display 2.8 inch (non-touch)",
     "sensecap_indicator_d1l": "Seeed SenseCAP Indicator D1L",
     "spotpear_s3_154": "SpotPear ESP32-S3 LCD 1.54\" MUMA",
+    "waveshare_lcd_147_c6_nontouch": "Waveshare ESP32-C6 LCD 1.47\" (non-touch)",
 }
 
 REQUIRED = ("env", "chip", "flash_size", "file", "sha256")
