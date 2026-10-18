@@ -30,7 +30,8 @@ enum SceneGroupType : uint8_t {
     SG_DIGITS = 4,   // p = digit w, digit h, stroke; box = "H:MM"; its one rect (lit colour) is the slot
     // The weekly poster (burndown.h). Colours are palette indices, two to a
     // p as lo | hi << 8; on both, p[1] = on pace | ahead, p[2] = out | unknown.
-    SG_CHART  = 5,   // p[0] = area | now marker; box = the plot; its one rect
+    SG_CHART  = 5,   // p[0] = area | now marker; box = the plot + 4 rows under it
+                     //     (x axis, run-out tick); its one rect
                      //     (the line colour) is the slot
     SG_WEEKNUM = 6,  // p[0] = the number's scale; box = the number (right) and
                      //     the verdict (left); its one rect (the verdict's ink) is the slot

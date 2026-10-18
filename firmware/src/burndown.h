@@ -78,10 +78,11 @@ struct WeekPace {
 int  burndown_elapsed(int weekly_reset_mins);
 // used_pct < 0 or weekly_reset_mins < 0: unknown.
 void burndown_pace(WeekPace* p, int used_pct, int weekly_reset_mins);
-// The verdict beside the number, two short lines (each up to 7 chars + NUL):
-// "+6"/"AHEAD", "-4"/"BEHIND", "ON"/"PACE", "OUT"/"2D" (or "9H", "<1H") when
-// red and the average rate runs out before the reset, "OUT"/"NOW" at the
-// limit; both empty when unknown.
+// The verdict beside the number, two short lines (each up to 7 chars + NUL;
+// line 1 is drawn in the level's colour): "+6"/"OVER", "-4"/"UNDER",
+// "ON"/"PACE" against the even pace; "EMPTY"/"IN 2D" (or "IN 9H", "IN <1H")
+// when red and the average rate runs out before the reset; "EMPTY"/"NOW" at
+// the limit; both empty when unknown.
 void burndown_verdict(const WeekPace* p, char line1[8], char line2[8]);
 // The % used `t` minutes into the window, for 0 <= t <= p->elapsed: straight
 // lines between real points only (0 % at the window's start, each recorded

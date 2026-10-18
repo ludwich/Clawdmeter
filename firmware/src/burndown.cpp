@@ -115,20 +115,20 @@ void burndown_verdict(const WeekPace* p, char l1[8], char l2[8]) {
     l1[0] = l2[0] = 0;
     if (!p || p->level == WEEK_UNKNOWN) return;
     if (p->out_in == 0) {
-        snprintf(l1, 8, "OUT");
+        snprintf(l1, 8, "EMPTY");
         snprintf(l2, 8, "NOW");
     } else if (p->level == WEEK_OUT && p->out_in > 0) {
-        snprintf(l1, 8, "OUT");
+        snprintf(l1, 8, "EMPTY");
         const int m = p->out_in;
-        if (m >= 24 * 60)  snprintf(l2, 8, "%dD", m / (24 * 60));
-        else if (m >= 60)  snprintf(l2, 8, "%dH", m / 60);
-        else               snprintf(l2, 8, "<1H");
+        if (m >= 24 * 60)  snprintf(l2, 8, "IN %dD", m / (24 * 60));
+        else if (m >= 60)  snprintf(l2, 8, "IN %dH", m / 60);
+        else               snprintf(l2, 8, "IN <1H");
     } else if (p->level == WEEK_AHEAD || p->delta > BURNDOWN_GRACE_PCT) {
         snprintf(l1, 8, "+%d", p->delta);
-        snprintf(l2, 8, "AHEAD");
+        snprintf(l2, 8, "OVER");
     } else if (p->delta < -BURNDOWN_GRACE_PCT) {
         snprintf(l1, 8, "%d", p->delta);
-        snprintf(l2, 8, "BEHIND");
+        snprintf(l2, 8, "UNDER");
     } else {
         snprintf(l1, 8, "ON");
         snprintf(l2, 8, "PACE");

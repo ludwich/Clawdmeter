@@ -39,9 +39,9 @@ static const struct { char c; uint16_t m; } GLYPHS[] = {
     {'0', 0x7B6F}, {'1', 0x749A}, {'2', 0x72A3}, {'3', 0x38A3}, {'4', 0x49ED},
     {'5', 0x38CF}, {'6', 0x7BCE}, {'7', 0x24A7}, {'8', 0x7BEF}, {'9', 0x39EF},
     {'%', 0x52A5}, {'+', 0x05D0}, {'-', 0x01C0}, {'<', 0x4454}, {'A', 0x5BEA},
-    {'B', 0x3AEB}, {'C', 0x624E}, {'D', 0x3B6B}, {'E', 0x72CF}, {'H', 0x5BED},
-    {'I', 0x7497}, {'N', 0x5B6B}, {'O', 0x2B6A}, {'P', 0x12EB}, {'T', 0x2497},
-    {'U', 0x7B6D}, {'W', 0x5FED},
+    {'C', 0x624E}, {'D', 0x3B6B}, {'E', 0x72CF}, {'H', 0x5BED}, {'I', 0x7497},
+    {'M', 0x5BFD}, {'N', 0x5B6B}, {'O', 0x2B6A}, {'P', 0x12EB}, {'R', 0x5AEB},
+    {'T', 0x2497}, {'U', 0x7B6D}, {'V', 0x2B6D}, {'W', 0x5FED}, {'Y', 0x24AD},
 };
 
 // "H:MM": the three digits' x and the colon's, a stroke-wide gap between
@@ -294,19 +294,23 @@ static lv_color_t level_color(const SceneGroup* g, const uint32_t* pal) {
 // The plot's row for `pct` used: 100 % on the top row, 0 % on the bottom.
 static int row_of(int pct, int h) { return (h - 1) - (pct * (h - 1) + 50) / 100; }
 
+#define CHART_UNDER 4   // the chart box's rows under the plot: x axis, run-out tick
+
 // The minute in the window at the middle of plot column `c` of `w`.
 static int col_mid(int c, int w) {
     return (int)((2 * (int32_t)c + 1) * BURNDOWN_WEEK_MINS / (2 * w));
 }
 
-// The burn-up, one px column per 1/w of the week: the % used so far from
-// real points only (burndown_used_at), filled under its line; a dashed now
-// marker above it; then the average rate dotted on to the reset in the
-// number's colour, clipped at 100 % with a mark where it gets there.
+// The burn-up, one px column per 1/w of the week, in the box's top rows (the
+// CHART_UNDER under them are the x axis and the run-out tick): the % used so
+// far from real points only (burndown_used_at), filled under its line; a
+// dashed now marker above it; then the average rate dotted on to the reset
+// in the number's colour, clipped at 100 %, with a 2x3 tick under the x axis
+// where it gets there.
 static void draw_chart(lv_layer_t* layer, const lv_area_t* clip, lv_draw_fill_dsc_t* d,
                        const SceneGroup* g, const uint32_t* pal, uint8_t line_c) {
     if (pace.level == WEEK_UNKNOWN) return;
-    const int x = g->box[0], y = g->box[1], w = g->box[2], h = g->box[3];
+    const int x = g->box[0], y = g->box[1], w = g->box[2], h = g->box[3] - CHART_UNDER;
     if (w < 2 || h < 2) return;
     const uint16_t p0 = (uint16_t)g->p[0];
     const lv_color_t area = lv_color_hex(pal[p0 & 0xFF]);
@@ -339,14 +343,15 @@ static void draw_chart(lv_layer_t* layer, const lv_area_t* clip, lv_draw_fill_ds
         if ((c - nc) % 2 == 0) fill_at(layer, clip, d, x + c, y + row_of(v, h), 1, 1);
         if (v >= 100 && !hit) {                 // where the average rate runs out
             hit = true;
-            fill_at(layer, clip, d, x + LV_MIN(c, w - 2), y, 2, 3);
+            fill_at(layer, clip, d, x + LV_MIN(c, w - 2), y + h + 1, 2, 3);
         }
     }
 }
 
 // The number (the weekly % used, "--" unknown) at `scale` with a 1x "%" on
 // its baseline, right-aligned in the level's colour; the verdict's two lines
-// at the left in `ink_c`.
+// at the left, the first (the points, or the word that goes with the number)
+// in the level's colour too, the second in `ink_c`.
 static void draw_week_text(lv_layer_t* layer, const lv_area_t* clip, lv_draw_fill_dsc_t* d,
                            const SceneGroup* g, const uint32_t* pal, uint8_t ink_c) {
     const int x = g->box[0], y = g->box[1], w = g->box[2];
@@ -359,8 +364,8 @@ static void draw_week_text(lv_layer_t* layer, const lv_area_t* clip, lv_draw_fil
     draw_text(layer, clip, d, pct_x - scale - text_w(num, scale), y, num, scale);
     draw_text(layer, clip, d, pct_x, y + 5 * scale - 5, "%", 1);
     burndown_verdict(&pace, l1, l2);
-    d->color = lv_color_hex(pal[ink_c]);
     draw_text(layer, clip, d, x, y, l1, 1);
+    d->color = lv_color_hex(pal[ink_c]);
     draw_text(layer, clip, d, x, y + 6, l2, 1);
 }
 

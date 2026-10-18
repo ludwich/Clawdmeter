@@ -90,11 +90,12 @@ SEG7 = (0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F, 0x40)
 SEG_DASH = 10
 WEEK_SLOTS = 168                      # burndown.h BURNDOWN_SLOTS: hours in the weekly window
 WEEK_MINS = 7 * 24 * 60               # burndown.h BURNDOWN_WEEK_MINS
+CHART_UNDER = 4                       # scene.cpp: the chart box's rows under the plot (axis, run-out tick)
 # burndown.h: pace grace, red from, red when out this early, no projection before.
 GRACE_PCT, RED_PCT, OUT_MARGIN, PROJECT_MINS = 1, 90, 24 * 60, 12 * 60
 WEEK_UNKNOWN, WEEK_ON, WEEK_AHEAD, WEEK_OUT = 0, 1, 2, 3
 # The glyphs scene.cpp GLYPHS carries for the poster's live text.
-LIVE_GLYPHS = "0123456789%+-<ABCDEHINOPTUW "
+LIVE_GLYPHS = "0123456789%+-<ACDEHIMNOPRTUVWY "
 
 
 def seg_rects(x, y, dw, dh, t, mask):
@@ -161,14 +162,14 @@ def week_verdict(p):
     if p["level"] == WEEK_UNKNOWN:
         return "", ""
     if p["out_in"] == 0:
-        return "OUT", "NOW"
+        return "EMPTY", "NOW"
     if p["level"] == WEEK_OUT and p["out_in"] > 0:
         m = p["out_in"]
-        return "OUT", (f"{m // 1440}D" if m >= 1440 else f"{m // 60}H" if m >= 60 else "<1H")
+        return "EMPTY", (f"IN {m // 1440}D" if m >= 1440 else f"IN {m // 60}H" if m >= 60 else "IN <1H")
     if p["level"] == WEEK_AHEAD or p["delta"] > GRACE_PCT:
-        return f"+{p['delta']}", "AHEAD"
+        return f"+{p['delta']}", "OVER"
     if p["delta"] < -GRACE_PCT:
-        return f"{p['delta']}", "BEHIND"
+        return f"{p['delta']}", "UNDER"
     return "ON", "PACE"
 
 
@@ -512,7 +513,9 @@ class Scene:
         100 % on the top): the % used so far, straight lines between real
         points only, as a line (`line_c`) over a fill (`area_c`); a dashed now
         marker (`now_c`) above it; and the average rate dotted on to the reset
-        in the level colour, clipped at 100 % with a mark where it runs out.
+        in the level colour, clipped at 100 %, with a 2x3 tick under the x
+        axis where it runs out. The box is the plot plus CHART_UNDER rows
+        under it (the x axis row, then room for that tick).
         `levels` = (on pace, ahead, out, unknown) colours. Nothing is drawn
         while the week is unknown. Axes, ticks and the even-pace line are
         plain shapes around it (shapes after it draw on top)."""
@@ -521,16 +524,17 @@ class Scene:
         ok, ahead, out, unk = levels
         gid = self._new_group(dict(type=G_CHART, p=(self._pack(area_c, now_c), self._pack(ok, ahead),
                                                     self._pack(out, unk))))
-        self.groups[gid]["box"] = (x, y, w, h)
-        self.rects.append([x, y, w, h, line_c, self._tod, gid])
+        self.groups[gid]["box"] = (x, y, w, h + CHART_UNDER)
+        self.rects.append([x, y, w, h + CHART_UNDER, line_c, self._tod, gid])
 
     def week_number(self, x, y, w, ink_c, levels, scale=2):
         """The weekly poster's live text in x..x+w from y: the weekly % used
         (`--` when unknown) right-aligned in the 3x5 font at `scale` with a 1x
         `%` on its baseline, in the
         level colour of `levels` = (on pace, ahead, out, unknown), and the
-        verdict's two 3x5 lines at the left in `ink_c` (`+6`/`AHEAD`,
-        `-4`/`BEHIND`, `ON`/`PACE`, `OUT`/`2D`, `OUT`/`NOW`)."""
+        verdict's two 3x5 lines at the left, the first in the level colour
+        and the second in `ink_c` (`+6`/`OVER`, `-4`/`UNDER`, `ON`/`PACE`,
+        `EMPTY`/`IN 2D`, `EMPTY`/`NOW`)."""
         ok, ahead, out, unk = levels
         h = max(5 * scale, 11)
         gid = self._new_group(dict(type=G_WEEKNUM, p=(scale, self._pack(ok, ahead), self._pack(out, unk))))
@@ -750,8 +754,10 @@ def digits_blocks(g, x, y, mins, t_ms):
 
 def chart_blocks(g, x, y, w, h, week, p):
     """scene.cpp draw_chart(): (x, y, w, h, which), which 0 = area, 1 = line,
-    2 = the now marker, 3 = the projection and its run-out mark."""
+    2 = the now marker, 3 = the projection and its run-out tick. The box's
+    bottom CHART_UNDER rows are the x axis and that tick."""
     out = []
+    h -= CHART_UNDER
     if p["level"] == WEEK_UNKNOWN:
         return out
     e = p["elapsed"]
@@ -782,7 +788,7 @@ def chart_blocks(g, x, y, w, h, week, p):
             out.append((x + c, y + chart_row(v, h), 1, 1, 3))
         if v >= 100 and not hit:
             hit = True
-            out.append((x + min(c, w - 2), y, 2, 3, 3))
+            out.append((x + min(c, w - 2), y + h + 1, 2, 3, 3))
     return out
 
 
@@ -800,15 +806,15 @@ def text_blocks(x, y, s, scale=1):
 
 
 def week_text_blocks(g, x, y, w, p):
-    """scene.cpp draw_week_text(): (x, y, w, h, which), which 0 = the number
-    (level colour), 1 = the verdict (ink)."""
+    """scene.cpp draw_week_text(): (x, y, w, h, which), which 0 = the level
+    colour (the number, the verdict's first line), 1 = ink (its second)."""
     scale = g["p"][0] & 255 or 2
     num = "--" if p["level"] == WEEK_UNKNOWN else str(p["used"])
     pct_x = x + w - 3                                      # a 1x "%" on the number's baseline
     out = [b + (0,) for b in text_blocks(pct_x - scale - text_width(num, scale), y, num, scale)]
     out += [b + (0,) for b in text_blocks(pct_x, y + 5 * scale - 5, "%")]
     l1, l2 = week_verdict(p)
-    out += [b + (1,) for b in text_blocks(x, y, l1)]
+    out += [b + (0,) for b in text_blocks(x, y, l1)]
     out += [b + (1,) for b in text_blocks(x, y + 6, l2)]
     return out
 

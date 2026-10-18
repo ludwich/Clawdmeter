@@ -94,14 +94,17 @@ top), each naming a palette index:
 - `s.week_number(x, y, w, ink_c, levels, scale=2)`: the weekly poster's
   live text: the weekly % used right-aligned at `scale` (with a 1x `%`) in
   the pace level's colour, `levels` = (on pace, ahead, out, unknown), and
-  the two-line verdict at the left in `ink_c` (`burndown_verdict`).
+  the two-line verdict at the left (`burndown_verdict`; the first line in
+  the level colour, the second in `ink_c`).
 - `s.week_chart(x, y, w, h, line_c, area_c, now_c, levels)`: the live
   burn-up in a plot area, one px column per 1/w of the week, 0 % on the
   bottom row and 100 % on the top: the % used so far (straight lines between
   real points) as `line_c` over `area_c`, a dashed now marker in `now_c`, and
   the average rate dotted on to the reset in the level colour, clipped at
-  100 % with a run-out mark. Axes, ticks and the even-pace dots are plain
-  shapes around it (`chart_row`, `chart_col_mid` place them on its grid).
+  100 %, with a 2×3 run-out tick under the x axis (the group's box is the
+  plot plus `CHART_UNDER` = 4 rows for it). Axes, ticks and the even-pace
+  staircase are plain shapes around it (`chart_row`, `chart_col_mid` place
+  them on its grid; shapes after it draw on top).
 - `s.anchor("DESK", x)` (office: Clawd's body-left at the laptop),
   `s.anchor("SIGN", x, y, w, h)` (an area for live text).
 
