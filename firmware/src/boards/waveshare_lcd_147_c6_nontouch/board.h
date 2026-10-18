@@ -17,7 +17,7 @@
 // 320x172 and every page, the meters included, is landscape.
 #define LCD_PANEL_WIDTH      172
 #define LCD_PANEL_HEIGHT     320
-#define LCD_ROTATION         1
+#define LCD_ROTATION         3
 #define LCD_WIDTH            320
 #define LCD_HEIGHT           172
 
