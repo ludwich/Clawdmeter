@@ -87,11 +87,13 @@ top), each naming a palette index:
   H:MM in 7-segment digits (dw x dh, strokes t px) showing the time left in
   the 5-hour window, `-:--` when unknown; the colon blinks each second.
   `ghost_c` draws the unlit 8:88 under it.
-- `s.chart(x, y, w, h, line_c, area_c, now_c, cell=2)`: the live 7-day
-  burndown in a plot area: one `cell`-px column per 168 / (w / cell) hours,
-  filled up to the weekly usage left (`area_c`, the top cell `line_c`),
-  columns without data left empty, and a dashed now line. Axes, ticks and the
-  ideal pace line are plain shapes around it.
+- `s.chart(x, y, w, h, line_c, area_c, now_c, ghost_c=None, cell=2)`: the
+  live 7-day burndown in a plot area: one `cell`-px column per
+  168 / (w / cell) hours, filled up to the weekly usage left (`area_c`, the
+  top cell `line_c`), and a dashed now line. A column without data is empty
+  before the first sample (or without `ghost_c`); after it, a dither in
+  `ghost_c` carries the last known level forward. Axes, ticks and the ideal
+  pace line are plain shapes around it.
 - `s.anchor("DESK", x)` (office: Clawd's body-left at the laptop),
   `s.anchor("SIGN", x, y, w, h)` (an area for live text).
 

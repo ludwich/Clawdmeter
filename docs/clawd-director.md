@@ -424,9 +424,12 @@ slot of the window (168 bytes, `0xFF` = no data) from real samples only
 the app's clock (`t` / 60 + `wr`). A reset more than 6 hours from the
 recorded one, or weekly use dropping 10 points, starts a new window and
 clears it. `pages.cpp` saves it in NVS (namespace `clawdweek`) at most once
-an hour, so it survives reboots. Hours the device didn't see stay empty
-rather than guessed; nothing is drawn until a payload this boot places the
-window, and spend-capped accounts (no weekly window) get an empty chart.
+an hour, so it survives reboots. Hours the device didn't see are never
+drawn as a value: before the first sample in the window the columns stay
+empty, and a gap after it is a faint dither at the last known level (carried
+forward, so it reads as "no data" rather than a drop). Nothing is drawn
+until a payload this boot places the window, and spend-capped accounts (no
+weekly window) get an empty chart.
 
 Both scenes re-colour by the local time of day: night 21:00–05:59, dusk
 06:00–07:59 and 18:00–20:59, day otherwise (day when the app sends no clock).

@@ -131,6 +131,7 @@ static void clear_pairing(const char* why) {
     Serial.printf("Pair: clearing bonds (%s), advertising\n", why);
     ble_clear_bonds();
     ui_set_pair_hint(PAIR_HINT_CLEARED);
+    pages_show(PAGE_METERS);   // the hint is on the meters: show it from any page
 }
 
 // Two PWR presses this close together cycle brightness instead of the page.
@@ -206,7 +207,10 @@ static void check_serial_cmd() {
                 }
             }
             else if (strcmp(cmd_buf, "info") == 0)  send_info();
-            else if (strncmp(cmd_buf, "page ", 5) == 0) pages_show((Page)atoi(cmd_buf + 5));
+            else if (strncmp(cmd_buf, "page ", 5) == 0) {
+                const int n = atoi(cmd_buf + 5);
+                if (n >= 0 && n < PAGE_COUNT) pages_show((Page)n);
+            }
             else if (strncmp(cmd_buf, "mood ", 5) == 0) pages_debug_mood(atoi(cmd_buf + 5));
             else if (strncmp(cmd_buf, "tod ", 4) == 0) {
                 // QA: the Clawd page's minute of day (-1 = the real clock).

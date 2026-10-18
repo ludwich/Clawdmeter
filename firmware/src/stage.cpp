@@ -218,8 +218,10 @@ static void fx_create(lv_obj_t* scr) {
     lv_obj_set_style_border_color(bubble, THEME_ACCENT, 0);
     lv_obj_set_style_border_width(bubble, 2, 0);
     bubble_text = lv_label_create(bubble);
-    lv_obj_set_width(bubble_text, BUBBLE_W - 16);
-    lv_label_set_long_mode(bubble_text, LV_LABEL_LONG_WRAP);
+    // At most two lines, cut with "..." past that, so a long alert never
+    // grows the bubble down into his head.
+    lv_obj_set_size(bubble_text, BUBBLE_W - 16, 2 * lv_font_get_line_height(&font_styrene_14));
+    lv_label_set_long_mode(bubble_text, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_font(bubble_text, &font_styrene_14, 0);
     lv_obj_set_style_text_color(bubble_text, THEME_BG, 0);
     for (int i = 0; i < 8; i++) vein[i] = fx_rect(scr, 4, 4, THEME_RED, 1);
@@ -249,6 +251,17 @@ static void place_vein(int cx, int cy, int s, int t) {
     }
 }
 
+// Drop a UTF-8 sequence left incomplete at the end of `s` (by truncation).
+static void utf8_trim_partial(char* s) {
+    const size_t n = strlen(s);
+    if (!n) return;
+    size_t i = n - 1;
+    while (i > 0 && ((uint8_t)s[i] & 0xC0) == 0x80) i--;   // start of the last character
+    const uint8_t lead = (uint8_t)s[i];
+    const size_t len = lead < 0x80 ? 1 : lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1;
+    if (i + len > n) s[i] = '\0';
+}
+
 static void fx_tick(const StageCues* c, uint32_t now) {
     if (!bubble) return;
     if (now - fx_at < FX_MS) return;
@@ -264,9 +277,10 @@ static void fx_tick(const StageCues* c, uint32_t now) {
     for (lv_obj_t* o : tail) fx_show(o, c->alert);
     fx_show(bubble, c->alert);
     if (c->alert) {
-        char t[48];
-        snprintf(t, sizeof(t), "HEY! %s",
-                 (c->alert_text && c->alert_text[0]) ? c->alert_text : "I need you");
+        char t[sizeof(shown_text)];
+        const int n = snprintf(t, sizeof(t), "HEY! %s",
+                               (c->alert_text && c->alert_text[0]) ? c->alert_text : "I need you");
+        if (n >= (int)sizeof(t)) utf8_trim_partial(t);   // cut: don't leave half a character
         if (strcmp(t, shown_text) != 0) {
             strncpy(shown_text, t, sizeof(shown_text) - 1);
             lv_label_set_text(bubble_text, shown_text);

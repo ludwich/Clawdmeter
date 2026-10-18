@@ -1,6 +1,7 @@
 #include "pages.h"
 #include "stage.h"
 #include "ui.h"
+#include "ui_pages.h"
 #include "pace.h"
 #include "theme.h"
 #include "clawd_director.h"
@@ -178,7 +179,11 @@ Page pages_current(void) { return current; }
 static void clawd_cues(StageCues* c);
 
 void pages_show(Page p) {
-    if (!enabled || p == current || p >= PAGE_COUNT) return;
+    if (!enabled || (int)p < 0 || p >= PAGE_COUNT || p == current) return;
+    if (current == PAGE_METERS && director_room() != ROOM_METERS) {
+        director_debug("home");   // the face is up: show me the meters first
+        return;
+    }
     const BoardCaps& caps = board_caps();
     lv_display_t* disp = lv_display_get_default();
     const Page was = current;
@@ -211,17 +216,15 @@ void pages_show(Page p) {
 
 void pages_next(void) {
     if (!enabled) return;
-    if (current == PAGE_METERS && director_room() != ROOM_METERS) {
-        director_debug("home");   // the face is up: show me the meters first
-        return;
-    }
-    pages_show((Page)((current + 1) % PAGE_COUNT));
+    pages_show((Page)((current + 1) % PAGE_COUNT));   // from the meters, maybe "home" first
 }
 
 void pages_update(const UsageData* d) {
-    last = *d;
-    have_last = true;
     if (d->valid && d->ok) {       // like the meters' title clock (ui.cpp)
+        // Keep the last good numbers: a bad payload doesn't blank the usage
+        // page, its numbers just dim once stale (ui_meters_live), like the meters.
+        last = *d;
+        have_last = true;
         clock_epoch = d->clock_epoch;
         clock_ms = millis();
         // Replays carry the app's own run-down countdowns, so they count here.
