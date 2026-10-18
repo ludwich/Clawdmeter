@@ -17,7 +17,7 @@
 
 struct SignalsUpdate {
     bool     session_reset;   // a real sample dropped > 5 points (chime trigger)
-    bool     replay;          // payload was a heartbeat replay (rp=1)
+    bool     replay;          // usage numbers were a replay (rp=1)
     bool     event_fired;     // a hook event the device hasn't reacted to yet
     char     event;           // 'p' prompt, 's' stop, 'b' back after a gap,
                               // or a future char; valid when event_fired
@@ -29,7 +29,9 @@ struct SignalsUpdate {
 
 // Event dedupe rule: the device reacts once per distinct `es`. The first `es`
 // seen after boot only sets the baseline (it describes something that
-// happened before we were listening), and replays never fire. Any change in
+// happened before we were listening). After that a new `es` fires even on
+// an `rp` write: `rp` is about the usage numbers, and the app marks every
+// hook-event write `rp`. A repeat of the same `es` never fires. Any change in
 // `es` fires, not just an increase, so a daemon restart that resets its
 // counter is still noticed.
 
