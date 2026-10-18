@@ -22,7 +22,8 @@ static void test_slot_of(void) {
     TEST_ASSERT_EQUAL(1, burndown_slot_of(BURNDOWN_WEEK_MINS - 60));
     TEST_ASSERT_EQUAL(167, burndown_slot_of(0));                       // reset now
     TEST_ASSERT_EQUAL(167, burndown_slot_of(59));
-    TEST_ASSERT_EQUAL(166, burndown_slot_of(60));
+    TEST_ASSERT_EQUAL(167, burndown_slot_of(60));                      // 10020 min in: still the last hour
+    TEST_ASSERT_EQUAL(166, burndown_slot_of(61));
 }
 
 static void test_blank_is_empty(void) {
@@ -59,11 +60,11 @@ static void test_no_clock_or_unknown_records_nothing(void) {
 
 static void test_reset_clears(void) {
     burndown_sample(&b, T0, 60, 90.0f);                       // the last hour of a week
-    TEST_ASSERT_EQUAL(90, b.used[166]);
+    TEST_ASSERT_EQUAL(90, b.used[167]);
     // The window reset: wr jumps back up to a full week (reset moved 7 days on).
     const int f = burndown_sample(&b, T0 + 70, BURNDOWN_WEEK_MINS - 10, 1.0f);
     TEST_ASSERT_TRUE(f & BURNDOWN_SAVE);
-    TEST_ASSERT_EQUAL_HEX8(BURNDOWN_EMPTY, b.used[166]);
+    TEST_ASSERT_EQUAL_HEX8(BURNDOWN_EMPTY, b.used[167]);
     TEST_ASSERT_EQUAL(1, b.used[0]);
 }
 

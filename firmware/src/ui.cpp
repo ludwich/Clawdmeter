@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "ui_pages.h"
 #include "performer.h"
 #include "mascot.h"
 #include "clawd_anim.h"

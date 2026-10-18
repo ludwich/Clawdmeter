@@ -4,6 +4,10 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <map>
+#include <string>
+#include <vector>
+
 #include "sim_platform.h"
 
 static uint64_t now_ms(void) {
@@ -64,24 +68,41 @@ void SimSerial::feed(const char* line) {
 }
 SimSerial Serial;
 
-// ---- Preferences: tiny in-memory key/value store ----
-#define PREF_SLOTS 16
-static struct { char key[16]; uint8_t val; bool used; } store[PREF_SLOTS];
+// ---- Preferences: tiny in-memory key/value store, per namespace ----
+static std::map<std::string, std::vector<uint8_t>> store;
 
+static std::string pref_key(const char* ns, const char* key) {
+    return std::string(ns) + '/' + key;
+}
+
+bool Preferences::begin(const char* name, bool read_only) {
+    (void)read_only;
+    strncpy(ns, name ? name : "", sizeof(ns) - 1);
+    ns[sizeof(ns) - 1] = '\0';
+    return true;
+}
+size_t Preferences::getBytes(const char* key, void* buf, size_t max_len) {
+    auto it = store.find(pref_key(ns, key));
+    if (it == store.end() || it->second.size() > max_len) return 0;
+    if (!it->second.empty()) memcpy(buf, it->second.data(), it->second.size());
+    return it->second.size();
+}
+size_t Preferences::putBytes(const char* key, const void* value, size_t len) {
+    const uint8_t* p = (const uint8_t*)value;
+    store[pref_key(ns, key)].assign(p, p + len);
+    return len;
+}
 uint8_t Preferences::getUChar(const char* key, uint8_t def) {
-    for (auto& s : store)
-        if (s.used && strcmp(s.key, key) == 0) return s.val;
-    return def;
+    uint8_t v;
+    return getBytes(key, &v, sizeof(v)) == sizeof(v) ? v : def;
 }
 size_t Preferences::putUChar(const char* key, uint8_t value) {
-    for (auto& s : store)
-        if (s.used && strcmp(s.key, key) == 0) { s.val = value; return 1; }
-    for (auto& s : store)
-        if (!s.used) {
-            s.used = true;
-            strncpy(s.key, key, sizeof(s.key) - 1);
-            s.val = value;
-            return 1;
-        }
-    return 0;
+    return putBytes(key, &value, sizeof(value));
+}
+int32_t Preferences::getInt(const char* key, int32_t def) {
+    int32_t v;
+    return getBytes(key, &v, sizeof(v)) == sizeof(v) ? v : def;
+}
+size_t Preferences::putInt(const char* key, int32_t value) {
+    return putBytes(key, &value, sizeof(value));
 }
