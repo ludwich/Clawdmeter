@@ -106,7 +106,7 @@ function in your board folder only when it has something to report.
 | `page <n>`                | shows a page on boards with landscape pages: 0 meters, 1 Clawd, 2 usage. Logs `page: 1`. |
 | `mood <bits>`             | forces Clawd's moods on his page: 1 angry, 2 yelling, 0 = the real cues (no reply). |
 | `work <0\|1\|-1>`         | forces Claude working (1, the office) or not (0, outside) on the Clawd page; -1 = the real cue. Replies `{"work":1}`. |
-| `tod <minute>`            | sets the Clawd page's local time, 0..1439 (scenery colours and wall clock; e.g. 1380 = night); -1 = the real clock. Replies `{"tod":1380}`. |
+| `tod <minute>`            | sets the Clawd page's local time, 0..1439 (scenery colours; e.g. 1380 = night); -1 = the real clock. Replies `{"tod":1380}`. |
 | `clawd <beat>`            | starts a Clawd beat now, for `screenshot` QA without waiting for the situation: `show`, `screensaver`, `attention`, `joy`, `lurk` (a lurk trip, PSRAM boards), `peek [x]` (curious face), `home` (return home). Replies `{"clawd":"show","ok":true}`. See `docs/clawd-director.md`. |
 
 ## Layout and visual checks

@@ -15,8 +15,9 @@ A scene is a list of flat rectangles drawn in order (later on top). Every
 rectangle names a palette INDEX; the palette has a day, dusk and night
 variant, so the whole scene re-colours by the real local time. Rectangles
 can belong to one group: a drift (clouds sliding by and wrapping), a frame of
-a cycling animation (twinkle, steam, blink), or a clock (hands at the real
-time). Clawd is never drawn here: the previews composite his official frames
+a cycling animation (twinkle, steam, blink), a clock (hands at the real
+time), an LED countdown (time left in the 5-hour window) or a chart (the
+weekly burndown). Clawd is never drawn here: the previews composite his official frames
 from firmware/src/splash_animations.h exactly where stage.cpp puts them.
 """
 import argparse
@@ -34,7 +35,8 @@ BODY_OX, BODY_W = 15, 24              # the idle body on the 55x37 art stage
 TODS = ("day", "dusk", "night")
 TOD_BIT = {"day": 1, "dusk": 2, "night": 4}
 ALL = 7
-G_STATIC, G_DRIFT, G_FRAME, G_CLOCK = 0, 1, 2, 3
+G_STATIC, G_DRIFT, G_FRAME, G_CLOCK, G_DIGITS, G_CHART = 0, 1, 2, 3, 4, 5
+G_LIVE = (G_CLOCK, G_DIGITS, G_CHART)   # drawn by the engine in their slot; box set by hand
 MAX_GROUPS = 48                       # scene.cpp SCENE_MAX_GROUPS
 MIN_PERIOD_MS = 100                   # animated updates at most ~10 Hz
 ANCHORS = ("DESK", "SIGN")            # scene_data.h SceneAnchorId, in order
@@ -80,6 +82,51 @@ FONT = {
     "#": ("#.#", "###", "#.#", "###", "#.#"), "^": ("#.#", "###", "###", ".#.", "..."),  # ^ = heart
 }
 FONT_W, FONT_H = 3, 5
+
+# ─── 7-segment digits (the LED countdown; scene.cpp SEG7 is the same table) ──
+# Bits a..g = 0..6: a top, b top-right, c bottom-right, d bottom, e bottom-left,
+# f top-left, g middle. Index 10 is "-".
+SEG7 = (0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F, 0x40)
+SEG_DASH = 10
+WEEK_SLOTS = 168                      # burndown.h BURNDOWN_SLOTS: hours in the weekly window
+
+
+def seg_rects(x, y, dw, dh, t, mask):
+    """scene.cpp draw_digits(): the lit segments of one digit as (x, y, w, h)."""
+    mid = (dh - t) // 2
+    segs = ((0, 0, dw, t), (dw - t, 0, t, mid + t), (dw - t, mid, t, dh - mid), (0, dh - t, dw, t),
+            (0, mid, t, dh - mid), (0, 0, t, mid + t), (0, mid, dw, t))
+    return [(x + sx, y + sy, w, h) for i, (sx, sy, w, h) in enumerate(segs) if mask >> i & 1]
+
+
+def digits_layout(x, y, dw, dh, t):
+    """scene.cpp digits_layout(): "H:MM" -> the three digits' x, the colon's
+    two dots and the width, with a stroke-wide gap between everything."""
+    xc = x + dw + t
+    xs = (x, xc + 2 * t, xc + 2 * t + dw + t)
+    mid = y + (dh - t) // 2
+    dots = ((xc, mid - t, t, t), (xc, mid + t, t, t))
+    return xs, dots, 3 * dw + 4 * t
+
+
+def countdown_glyphs(mins):
+    """The three digits' SEG7 indices for `mins` left (H:MM), -:-- when unknown."""
+    if mins is None or mins < 0:
+        return (SEG_DASH,) * 3
+    h = min(9, mins // 60)
+    return (h, mins % 60 // 10, mins % 10)
+
+
+def week_column(week, col, cols, now_slot):
+    """burndown.cpp burndown_column(): the latest % used in the column, None when none."""
+    if week is None or now_slot is None or now_slot < 0:
+        return None
+    s0 = col * WEEK_SLOTS // cols
+    s1 = min((col + 1) * WEEK_SLOTS // cols, now_slot + 1)
+    for s in range(s1 - 1, s0 - 1, -1):
+        if week[s] is not None:
+            return week[s]
+    return None
 
 
 def text_width(s, scale=1):
@@ -345,6 +392,45 @@ class Scene:
         # The hands' slot in the layer order: drawn by the engine, not as a rect.
         self.rects.append([cx - r, cy - r, 2 * r, 2 * r, hand_c, self._tod, gid])
 
+    def digits(self, x, y, lit_c, ghost_c=None, dw=6, dh=10, t=2):
+        """An LED countdown "H:MM" (the time left in the 5-hour window, "-:--"
+        when unknown) in 7-segment digits dw x dh with strokes t px, lit by the
+        engine in `lit_c`; the colon blinks each second while it counts.
+        `ghost_c` draws the unlit segments (8:88) under it, like a real LED
+        display. Returns its width."""
+        xs, dots, width = digits_layout(x, y, dw, dh, t)
+        if ghost_c is not None:
+            with self.shape():
+                for dx in xs:
+                    for r in seg_rects(dx, y, dw, dh, t, SEG7[8]):
+                        self.rect(*r, ghost_c)
+                for r in dots:
+                    self.rect(*r, ghost_c)
+        gid = self._new_group(dict(type=G_DIGITS, p=(dw, dh, t)))
+        self.groups[gid]["box"] = (x, y, width, dh)
+        self.rects.append([x, y, width, dh, lit_c, self._tod, gid])
+        return width
+
+    def chart(self, x, y, w, h, line_c, area_c, now_c, ghost_c=None, cell=2):
+        """The live weekly burndown in the plot area x, y, w x h: a column of
+        `cell` px per WEEK_SLOTS / (w / cell) hours, filled up to the weekly
+        usage left (`area_c`, its top cell `line_c`), and a dashed "now" line
+        (`now_c`). A column without data (the device saw nothing then) is a
+        dither in `ghost_c` at the last known level (empty before the first
+        sample, or without `ghost_c`). The axes and the ideal pace line are
+        ordinary shapes the scene draws around it."""
+        if w % cell or h % cell or WEEK_SLOTS % (w // cell):
+            raise ValueError(f"chart {w}x{h}: whole cells, and columns dividing {WEEK_SLOTS} hours")
+        if not 0 < cell < 256:
+            raise ValueError(f"chart cell {cell}")
+        # p[0] packs the cell size (low byte) and the ghost colour + 1 (high byte, 0 = none).
+        ghost = 0 if ghost_c is None else ghost_c + 1
+        if ghost > 127:
+            raise ValueError("chart ghost colour index too high for p[0]")
+        gid = self._new_group(dict(type=G_CHART, p=(cell | ghost << 8, area_c, now_c)))
+        self.groups[gid]["box"] = (x, y, w, h)
+        self.rects.append([x, y, w, h, line_c, self._tod, gid])
+
     def anchor(self, name, x, y=0, w=0, h=0):
         """A named point/area the engine reads: DESK (x = Clawd's body-left at the
         laptop, office), SIGN (an area for live text)."""
@@ -363,7 +449,7 @@ class Scene:
         """Merge, then work out every group's bounding box and wrap."""
         self.rects = _merge_sequential(self.rects)
         for gid, g in enumerate(self.groups):
-            if gid == 0 or g["type"] == G_CLOCK:
+            if gid == 0 or g["type"] in G_LIVE:
                 continue
             rs = [r for r in self.rects if r[6] == gid]
             if rs:
@@ -472,6 +558,12 @@ def emit_header(s):
         elif t == G_CLOCK:
             p, nk = (g["cx"], g["cy"], g["r"]), (0, 0)
             note = "clock hands"
+        elif t == G_DIGITS:
+            p, nk = g["p"], (0, 0)
+            note = "LED countdown H:MM"
+        elif t == G_CHART:
+            p, nk = g["p"], (0, 0)
+            note = "weekly burndown chart"
         else:
             p, nk = (0, 0, 0), (0, 0)
             note = "static"
@@ -535,11 +627,75 @@ def hand_blocks(g, minute):
     return out
 
 
-def render(s, tod="day", t_ms=0, minute=None):
+def digits_blocks(g, x, y, mins, t_ms):
+    """scene.cpp draw_digits(): the lit segments and colon as (x, y, w, h)."""
+    dw, dh, t = g["p"]
+    xs, dots, _ = digits_layout(x, y, dw, dh, t)
+    out = []
+    for dx, gl in zip(xs, countdown_glyphs(mins)):
+        out += seg_rects(dx, y, dw, dh, t, SEG7[gl])
+    if mins is None or mins < 0 or (t_ms // 500) % 2 == 0:    # blinks while counting
+        out += list(dots)
+    return out
+
+
+def chart_blocks(g, x, y, w, h, week, now_slot):
+    """scene.cpp draw_chart(): (x, y, w, h, which), which 0 = area, 1 = its
+    top cell (the line), 2 = the now marker, 3 = a no-data column's dither."""
+    cell, ghost = g["p"][0] & 255, g["p"][0] >> 8
+    cols, rows = w // cell, h // cell
+    out = []
+    if now_slot is None or now_slot < 0:
+        return out
+    nc = min(cols - 1, now_slot * cols // WEEK_SLOTS)
+    for r in range(0, rows, 2):                            # dashed, from the top
+        out.append((x + nc * cell, y + r * cell, cell, cell, 2))
+    last_hc = None                                         # the last known height
+    for c in range(min(cols, nc + 1)):
+        used = week_column(week, c, cols, now_slot)
+        if used is None:
+            if ghost and last_hc:                          # carried forward, dithered
+                for r in range(rows - last_hc, rows, 2):
+                    out.append((x + c * cell, y + r * cell, cell, cell, 3))
+            continue
+        left = 100 - used
+        hc = (left * rows + 50) // 100
+        if left > 0 and hc == 0:
+            hc = 1
+        last_hc = hc
+        if hc <= 0:
+            continue
+        top = y + h - hc * cell
+        out.append((x + c * cell, top, cell, cell, 1))
+        if hc > 1:
+            out.append((x + c * cell, top + cell, cell, (hc - 1) * cell, 0))
+    return out
+
+
+def synthetic_week(now_slot=110, start_hour=8):
+    """A believable week of weekly % used per hour slot up to `now_slot`: use
+    climbs in working hours (more mid-week), a little in the evening, nothing
+    overnight, and the device was off for a stretch (slots 52..63 hold no
+    data). The window started at `start_hour` local time."""
+    used, week = 0.0, [None] * WEEK_SLOTS
+    for s in range(now_slot + 1):
+        hour = (start_hour + s) % 24
+        day = (start_hour + s) // 24
+        if 9 <= hour < 18:
+            used += (1.0, 1.4, 1.6, 1.2, 0.9, 0.3, 0.2, 0.2)[min(day, 7)]
+        elif 20 <= hour < 23:
+            used += 0.5
+        if not 52 <= s < 64:
+            week[s] = min(100, int(round(used)))
+    return week
+
+
+def render(s, tod="day", t_ms=0, minute=None, live=None):
     from PIL import Image
     img = Image.new("RGB", (W, H), (0, 0, 0))
     bit = TOD_BIT[tod]
     pal = [q565(c) for c in s.pal[tod]]
+    live = live or {}
 
     def fill(x, y, w, h, col):
         x0, y0, x1, y1 = max(0, x), max(0, y), min(W, x + w), min(H, y + h)
@@ -555,6 +711,17 @@ def render(s, tod="day", t_ms=0, minute=None):
         if g["type"] == G_CLOCK:
             for bx, by in hand_blocks(g, minute):
                 fill(bx, by, 2, 2, pal[c])
+            continue
+        if g["type"] == G_DIGITS:
+            for r in digits_blocks(g, x, y, live.get("countdown"), t_ms):
+                fill(*r, pal[c])
+            continue
+        if g["type"] == G_CHART:
+            ghost = g["p"][0] >> 8
+            cols = (pal[g["p"][1]], pal[c], pal[g["p"][2]], pal[ghost - 1] if ghost else None)
+            for bx, by, bw, bh, which in chart_blocks(g, x, y, w, h, live.get("week"),
+                                                      live.get("now")):
+                fill(bx, by, bw, bh, cols[which])
             continue
         dx = drift_dx(g, t_ms) if g["type"] == G_DRIFT else 0
         fill(x + dx, y, w, h, pal[c])
@@ -612,8 +779,8 @@ def draw_clawd(img, anim_name, frame, body_x, mirror=False):
 CLAWD_POSES = {"idle": ("walking", 0), "laptop": ("laptop", None)}
 
 
-def compose(s, tod, t_ms, minute, clawd, x):
-    img = render(s, tod, t_ms, minute)
+def compose(s, tod, t_ms, minute, clawd, x, live=None):
+    img = render(s, tod, t_ms, minute, live)
     if clawd and clawd != "none":
         anim, frame = CLAWD_POSES[clawd]
         if frame is None:
@@ -644,6 +811,11 @@ def cmd_preview(args):
     tods = TODS if (args.scene == "all" and not args.tod) else (args.tod or None,)
     outdir = args.outdir or PREVIEW_DIR
     sheet = []
+    now = args.week_now
+    week = {"synthetic": lambda: synthetic_week(now), "empty": lambda: [None] * WEEK_SLOTS,
+            "even": lambda: [min(100, s * 100 // (WEEK_SLOTS - 1)) for s in range(WEEK_SLOTS)],
+            "none": lambda: None}[args.week]()
+    live = dict(countdown=args.sr, week=week, now=None if args.week == "none" else now)
     for n in names:
         s = load_scene(n)
         for tod in tods:
@@ -657,7 +829,7 @@ def cmd_preview(args):
                 frames = []
                 step = 100
                 for t in range(args.t, args.t + int(args.gif * 1000), step):
-                    frames.append(compose(s, tod, t, minute, clawd, args.x)
+                    frames.append(compose(s, tod, t, minute, clawd, args.x, live)
                                   .resize((W * 2, H * 2), 0))
                 out = args.out if (args.out and len(names) == 1 and len(tods) == 1) \
                     else os.path.join(outdir, f"{n}_{tod}.gif")
@@ -665,7 +837,7 @@ def cmd_preview(args):
                 frames[0].save(out, save_all=True, append_images=frames[1:], duration=step, loop=0)
                 print(out)
                 continue
-            img = compose(s, tod, args.t, minute, clawd, args.x)
+            img = compose(s, tod, args.t, minute, clawd, args.x, live)
             out = args.out if (args.out and len(names) == 1 and len(tods) == 1) \
                 else os.path.join(outdir, f"{n}_{tod}.png")
             big = save(img, out)
@@ -693,6 +865,13 @@ def main(argv=None):
     pv.add_argument("scene", choices=SCENES + ("all",))
     pv.add_argument("--tod", choices=TODS, help="time of day (default: from --minute, else day)")
     pv.add_argument("--minute", type=int, help="local minute of day for the clock (0..1439)")
+    pv.add_argument("--sr", type=int, default=161,
+                    help="minutes left in the 5-hour window for the LED countdown (-1 = unknown)")
+    pv.add_argument("--week", choices=("synthetic", "empty", "even", "none"), default="synthetic",
+                    help="the burndown chart's history: a made-up week, no data, an even "
+                         "burn, or no payload yet (nothing drawn, no now marker)")
+    pv.add_argument("--week-now", type=int, default=110,
+                    help=f"the chart's current hour slot 0..{WEEK_SLOTS - 1}")
     pv.add_argument("--t", type=int, default=0, help="animation time in ms (drift, frames)")
     pv.add_argument("--clawd", choices=("idle", "laptop", "none"),
                     help="Clawd's pose (default: laptop in the office, idle outside)")

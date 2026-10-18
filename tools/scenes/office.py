@@ -4,8 +4,10 @@ A cosy study on a 2 px grid: teal walls over panelled wainscot, cream trim, a
 plank floor with a navy rug where he sits. Left, a big window onto the city
 (blue sky and drifting clouds by day, a setting sun at dusk, moon, stars and
 lit windows at night) above a bookcase; centre, a red "CODING" lightbox and a
-green banker's pendant lamp right over him; right, a rising-chart poster, the
-wall clock (real time), sticky notes and a water cooler that glugs. By day the
+green banker's pendant lamp right over him; right, a framed chart of this
+week's usage burning down (live, scene.cpp draws it from burndown.h), an LED
+display counting down to the next 5-hour window over a water cooler that
+glugs, and sticky notes. By day the
 lamp is off and the window throws two panes of sun on the planks. When the lamp
 is on (dusk and night) the bulb glows amber and a narrow cone lifts the wall
 behind him in three dithered steps of its own cool hue, down to a pool on the
@@ -22,8 +24,8 @@ DESK_X = 112             # his body-left at the laptop (the laptop reaches ~DESK
 LAMP_X = 192             # the pendant lamp's centre, over his head at the laptop (x 142..221)
 BEAM_Y = 30              # the beam starts under the bulb
 # The cone fades as it falls: (above this y, step), brightest by the bulb. Each
-# seam is a 2-row checker dither, so it reads as falloff, not stripes.
-CONE_STEPS = ((46, 3), (72, 2), (RAIL_Y, 1))
+# seam is a 4-row checker dither, so it reads as falloff, not stripes.
+CONE_STEPS = ((40, 3), (58, 2), (RAIL_Y, 1))
 FLICKER_Y = 48           # the flicker dims the cone's bright top only (a small redraw)
 WARM = 0xFFCF8A          # the lamp's light
 # The light, in steps: 1 = faint .. 3 = brightest (the cone by the bulb).
@@ -31,8 +33,10 @@ WARM = 0xFFCF8A          # the lamp's light
 # tans there would sit in his terra-cotta's family, round his head); the amber
 # stays in the bulb's glow and the pool on the rug. The floor is mixed toward
 # the light; the rug keeps its blue and only lifts.
-WALL_RAMP = ((0x5C5268, 0x6C6274, 0x7C7280),     # dusk
-             (0x2C3044, 0x3A3A54, 0x4A4664))     # night
+# Small, uneven lifts: the bulk of the cone nearly vanishes into the wall and
+# the value gathers by the bulb (step 3 takes a whisper of the bulb's warmth).
+WALL_RAMP = ((0x55506E, 0x605A78, 0x706886),     # dusk
+             (0x22304A, 0x2C3A56, 0x384864))     # night
 LIGHT = (0xFFC888, 0xFFB878)
 FLOOR_T = (0.0, 0.22, 0.34)
 RUG_LIFT = ((1.0, 0.0), (1.3, 0.08), (1.55, 0.12))     # (lift, warm mix) at dusk;
@@ -66,12 +70,18 @@ def beam_steps():
         half = 4 + (y - BEAM_Y) // 4 * 2
         x0, x1 = LAMP_X - half, LAMP_X + half
         step = next(st for y_end, st in CONE_STEPS if y < y_end)
-        # Across a seam the odd cells take the other step: a 2-row checker.
-        other = step - 1 if y + 2 in seams else step + 1 if y in seams else 0
+        # Across a seam the odd cells take the other step: a 4-row checker.
+        other = (step - 1 if (y + 2 in seams or y + 4 in seams) else
+                 step + 1 if (y in seams or y - 2 in seams) else 0)
         out.append((y, y + 2, x0, x1, step))
         if other:
-            for x in range(x0 + (x0 // 2 + 1) % 2 * 2, x1, 4):    # the odd cells
+            for x in range(x0 + (x0 // 2 + y // 2) % 2 * 2, x1, 4):    # the odd cells
                 out.append((y, y + 2, x, x + 2, other))
+        # Soft edges: every other row the outer cell each side is a step
+        # dimmer, so the outline is a checker, not a hard stair.
+        if (y // 2) % 2:
+            out.append((y, y + 2, x0, x0 + 2, step - 1))
+            out.append((y, y + 2, x1 - 2, x1, step - 1))
     for y0, y1, half, core in ((FLOOR_Y, 168, 60, 34), (168, H, 76, 42)):
         out.append((y0, y1, LAMP_X - half, LAMP_X + half, 1))
         out.append((y0, y1, LAMP_X - core, LAMP_X + core, 2))
@@ -199,14 +209,14 @@ def scene():
     led       = s.color(0xFF5040, 0xFF5A44, 0xFF5A44)
     led_dk    = s.color(0x7A1E1A, 0x7A1E1A, 0x701A18)    # under the glyphs
     led_glow  = s.color(0x3F6470, 0x6A3E50, 0x4A2230)
-    paper     = s.color(0xF4F1E8, 0xEADCCB, 0x9C9A96)
+    paper     = s.color(0xF4F1E8, 0xEADCCB, 0xB8B4AC)
     ink       = s.color(0x2A2E36, 0x2A2A34, 0x1A1C22)
-    bar_a     = s.color(0x3A9088, 0x3E7C7C, 0x2A5656)
+    bar_a     = s.color(0x3A9088, 0x3E7C7C, 0x2F6B66)
     bar_b     = s.color(0x34497E, 0x383E72, 0x26305A)
     arrow     = s.color(0xD04A3A, 0xC4463E, 0x8A3A34)
-    face      = s.color(0xF4F1E8, 0xEADCCB, 0xB8B2A6)
-    rim       = s.color(0x22262C, 0x22222A, 0x8A6E44)    # brass at night, apart from the poster
-    hand      = s.color(0x1A1A1A)
+    pace_c    = s.color(0x8F8A7E, 0x8C7E72, 0x5C5A58)    # the ideal pace dots on the paper
+    bar_ghost = s.color(0xBFD9D4, 0xB4C9C0, 0x5A6E6C)    # hours the device saw nothing
+    seg_off   = s.color(0x381A1A, 0x3A1A1A, 0x381818)    # the LED's unlit segments
     jug       = s.color(0x8CCCEE, 0x9CB8DA, 0x3C5C7A)
     jug_hi    = s.color(0xD4F0FC, 0xD8E0F0, 0x9ABEDC)
     jug_air   = s.color(0xBEE4F6, 0xC4D2E8, 0x6A8CAA)
@@ -437,27 +447,39 @@ def scene():
     bulb(halo, bulb_on)
     s.rect(LAMP_X - 4, BEAM_Y - 2, 8, 2, bulb_dim, tod="day")   # by day the bulb is off
 
-    # ─── Poster: the chart only goes up ──────────────────────────────────────
-    px0, py0 = 224, 10
-    s.rect(px0, py0, 52, 40, wood_dk)
-    s.rect(px0 + 2, py0 + 2, 48, 36, paper)
-    s.pixels(px0 + 6, py0 + 6, [               # bars climb under one clean arrow
-        "i............aaaa.",
-        "i.............aaa.",
-        "i...........aa..a.",
-        "i.........aa..bb..",
-        "i.......aa....bb..",
-        "i.....aa...bb.bb..",
-        "i...aa..bb.bb.bb..",
-        "i.aa....bb.bb.bb..",
-        "i....bb.bb.bb.bb..",
-        "i.bb.bb.bb.bb.bb..",
-        "iiiiiiiiiiiiiiiii.",
-    ], {"i": ink, "a": arrow, "b": bar_a}, scale=2)
-    s.anchor("SIGN", px0 + 4, py0 + 29, 44, 7)   # a plain caption strip under the chart
+    # ─── Poster: this week's usage, burning down ──────────────────────────────
+    # x = the 7-day window (one 2 px column per 8 hours, a tick per day), y =
+    # weekly usage left. Faint dots trace the even pace from full to empty at
+    # the reset; the engine fills what was left each 8 hours over them (hours
+    # the device saw nothing as a pale dither at the last known level) and a
+    # dashed red line marks now.
+    px0, py0 = 208, 10
+    PW, PH = 42, 30                               # the plot: 21 columns x 15 rows of 2 px
+    s.rect(px0, py0, 56, 44, wood_dk)
+    s.rect(px0 + 2, py0 + 2, 52, 40, paper)
+    ax, ay = px0 + 8, py0 + 6                     # the plot's top-left
+    s.rect(ax - 2, ay, 2, PH + 2, ink)            # y axis
+    s.rect(ax - 2, ay + PH, PW + 2, 2, ink)       # x axis
+    for d in range(1, 7):                         # 1 px day ticks under it
+        s.rect(ax + d * PW // 7, ay + PH + 2, 1, 2, ink)
+    s.rect(ax - 4, ay, 2, 2, ink)                 # 100 % tick
+    with s.shape():                               # the even pace, every other column (under the bars)
+        cols, rows = PW // 2, PH // 2
+        for c in range(0, cols, 2):
+            left = 1 - (c + 0.5) / cols
+            hc = int(left * rows + 0.5)
+            if hc > 0:
+                s.rect(ax + c * 2, ay + PH - hc * 2, 2, 2, pace_c)
+    s.chart(ax, ay, PW, PH, bar_b, bar_a, arrow, ghost_c=bar_ghost)
 
-    # ─── Wall clock (real time) over the water cooler ────────────────────────
-    s.clock(296, 30, 13, face, hand, rim_c=rim)
+    # ─── LED countdown to the next 5-hour window, over the water cooler ──────
+    # 7-segment digits 8 x 14 (the largest that fit beside the poster), red
+    # like the CODING sign, with the unlit segments faintly showing.
+    dx0, dy0 = 270, 18
+    s.rect(dx0 - 2, dy0 - 2, 44, 26, led_glow, tod=("dusk", "night"))
+    s.rect(dx0, dy0, 40, 22, box)
+    s.rect(dx0 + 2, dy0 + 2, 36, 18, box_in)
+    s.digits(dx0 + 4, dy0 + 4, led, seg_off, dw=8, dh=14)
 
     # Water cooler, standing on the floor: the jug glugs a bubble now and then.
     cx0, cy0 = 282, 78

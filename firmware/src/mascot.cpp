@@ -232,14 +232,14 @@ lv_obj_t* mascot_create(lv_obj_t* parent, int sx, int feet, int c) {
     laptop_anim = clawd_anim("laptop");
     clawd_rng_seed(&rng, millis() ^ 0xC1A3D);
 
-    int mw = 0, mh = 0;
+    // Sized for the largest act by area: each frame is drawn at its own size.
+    size_t bytes = 0;
     for (const char* n : CORNER_ANIMS) {
         const ClawdAnim* a = clawd_anim(n);
         if (!a) continue;
-        if (a->w > mw) mw = a->w;
-        if (a->h > mh) mh = a->h;
+        const size_t b = (size_t)(a->w * c) * (a->h * c) * 3;
+        if (b > bytes) bytes = b;
     }
-    const size_t bytes = (size_t)(mw * c) * (mh * c) * 3;
 
     const int mind = caps.width < caps.height ? caps.width : caps.height;
     lurk_cell = mind / SPLASH_GRID;
@@ -511,7 +511,7 @@ void mascot_tick(void) {
     if (walking && frame == a->loop_end) next = a->loop_start;   // hold the gait loop
     // Keep typing while the work goes on; once it stops he plays out the
     // rest (closing the laptop) and sits back down.
-    if (mode == M_ACT && act_auto && working && a == laptop_anim && frame == a->loop_end)
+    if (mode == M_ACT && act_auto && working && autonomy && a == laptop_anim && frame == a->loop_end)
         next = a->loop_start;
 
     if (next >= a->frame_count) {

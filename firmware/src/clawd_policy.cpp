@@ -209,7 +209,7 @@ bool turn_on_event(TurnTracker* t, char event, uint32_t now, const ClawdTuning* 
     if (event == 'p' || event == 'b') {
         // A follow-up prompt mid-turn keeps the original start: the turn is
         // the whole stretch of Claude working, not the last message.
-        if (!t->in_turn) { t->in_turn = true; t->prompt_at = now; }
+        if (!t->in_turn) { t->in_turn = true; t->prompt_at = now; t->busy_at = now; }
         return false;
     }
     if (event == 's') {

@@ -10,7 +10,8 @@
 // 320x172 canvas (scaled for other panels). Each names a palette index; the
 // palette has a day, dusk and night variant. A rectangle shows at the times
 // in its `tod` mask and belongs to one group: 0 is static, others drift,
-// cycle as a frame of an animation, or stand for a clock's hands.
+// cycle as a frame of an animation, or stand for something the engine draws
+// live in their place: a clock's hands, an LED countdown, the burndown chart.
 
 #define SCENE_W        320
 #define SCENE_H        172
@@ -25,6 +26,10 @@ enum SceneGroupType : uint8_t {
     SG_DRIFT  = 1,   // p = speed (px per 10 s, signed), wrap x0, wrap x1 for its left edge
     SG_FRAME  = 2,   // p = period ms, phase ms; frame k of n
     SG_CLOCK  = 3,   // p = centre x, centre y, radius; its one rect is the hands' slot
+    SG_DIGITS = 4,   // p = digit w, digit h, stroke; box = "H:MM"; its one rect (lit colour) is the slot
+    SG_CHART  = 5,   // p = cell px | (no-data colour + 1) << 8, area colour, now colour;
+                     //     box = the plot; its one rect
+                     //     (the line colour) is the slot
 };
 
 struct SceneRect {

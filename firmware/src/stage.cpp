@@ -359,6 +359,7 @@ bool stage_open(lv_obj_t* scr, int w, int h, const StageCues* cues) {
     // opening the page never shows a bare screen (on_covered sits him at his
     // desk). Without cues the first tick does it.
     if (cues) {
+        scene_set_live(cues->session_left_mins, cues->week, cues->week_now_slot);
         scene_tick(now, cues->minute_of_day);
         scene_set(cues->working ? SCENE_OFFICE : SCENE_OUTDOOR, false);
         scene_since = now;
@@ -378,6 +379,7 @@ void stage_tick(const StageCues* cues) {
     if (!img || !anim) return;
     const bool working = cues->working;
     const uint32_t now = millis();
+    scene_set_live(cues->session_left_mins, cues->week, cues->week_now_slot);
     scene_tick(now, cues->minute_of_day);
     const SceneId want = working ? SCENE_OFFICE : SCENE_OUTDOOR;
     if (scene_target() == SCENE_NONE) {
